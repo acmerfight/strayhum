@@ -1,34 +1,65 @@
-# strayhum — World Music Radio
+# strayhum — music you weren't looking for
 
-The globe carries one city caption. A tap finds music at the closest visible location. During playback, the station supplies the energy that changes the colour around its city.
+strayhum plays one small radio station at a time, somewhere in the world. You listen; when you want somewhere else, you drift. It is not a directory: there is no search and no filter, because the point is the station you would not have chosen.
 
-## Research and design decisions
+## One picture, made of the data
 
-ART+COM's *Manta Rhei* coordinates light with the movement of a physical object. strayhum carries its pigment field in geographical coordinates, so it turns with the globe and the coastline stays legible. [ART+COM — Manta Rhei](https://artcom.de/?project=manta-rhei)
+The globe is drawn like a plate from an engraved atlas, from a single distance-to-coast texture:
 
-Semiconductor's *Brilliant Noise* maps changes in image brightness to sound. strayhum takes the reverse path. A measured rise in bass or broadband energy pushes the edge of a translucent sheet across the station. A damped spring shapes its release. The catalog’s primary family and descriptive tags select the movement. Electronic stations use a narrow, fast pleat. Jazz uses a delayed lateral return. Classical uses a broad arc driven by the sustained envelope. Other formats keep the baseline response. Sustained energy shifts the surrounding colour, and a quiet passage lets it settle. [Semiconductor — Brilliant Noise](https://semiconductorfilms.com/art/brilliant-noise/)
+- **Coast**: one hairline, one device pixel wide at any zoom.
+- **Water lines**: parallel lines echo each coast out to sea, spaced wider the farther they are from shore, as engravers cut them.
+- **Land**: hatched along the parallels. Line weight follows the real sun at this moment: broad lines where it is day, fine lines where it is night. The terminator is drawn with line weight, not with a shadow.
+- **Stations**: every light is a station. Lights on the night side shine brighter, like cities.
+- **Sound**: the playing station's attacks leave it as rings that travel across the surface. Where a ring passes, the engraving turns amber. Sustained music gathers a warmth around the station.
+- **Journey**: tonight's route stays drawn as great-circle arcs between the places you heard.
 
-The listener can explore freely while a station plays. One city name appears under the pointer. The local time, frequency and playback controls belong to the player, leaving the globe free of persistent station markers. [Ryoji Ikeda — datamatics](https://www.ryojiikeda.com/project/datamatics/)
+Colour is one ink, one bone white and one amber. Amber means only "signal": the playing station, its rings, the current leg of the journey, On air, and the dot in the wordmark while something plays.
+
+Type is Bodoni Moda for names (a didone, like map lettering; its hairlines echo the engraving) and Geist for everything else. Places are set in spaced capitals, as on a map.
 
 ## Motion score
 
-| Moment | Visible action | What it communicates |
+| Moment | What happens | Why |
 | --- | --- | --- |
-| Waiting | Broad pools of colour drift across the land. The sound meter stays hidden. | The sculpture is available to explore. |
-| Drag and release | The geography follows the pointer. A short, decelerating coast follows a flick. | The listener controls an object with a little weight. |
-| Departure | The city name resolves into focus. A fine trace advances along a great-circle route. | The station has changed and the new destination is identifiable. |
-| Passage | The view eases outward, turns and settles over approximately one to two seconds. Longer east–west turns have more clearance. | Distance has a visible duration. |
-| Arrival | Once the camera settles, the first measured sound sends a light front out from the station. | Attention returns to the point that was selected. |
-| Listening | The station name takes the headline. Fast attacks bend the foreground sheet. Sustained sound carries the underlying pigment forward, and silence lets the surface settle. FIP and KEXP can supply an artist and title during playback. | The broadcaster supplies part of the composition. |
+| Arrival on the page | The coast is drawn first, then the water lines spread outward, then the hatching, then the lights come on. | The plate is engraved in front of you. |
+| Idle | The earth turns slowly. The first encounter is a place where it is evening or night, labelled "Somewhere, right now". | An invitation, not a menu. |
+| Drift | Static rises as the old station fades. The camera flies along the great circle while an amber pen draws the leg. The caption leaves, and the new place resolves as its letters close up. | Distance has a duration. |
+| Landing | The stream is held under the static until the flight lands, then crossfades in. The first sound leaves the station as one wide ring. | Image and music arrive together. |
+| Listening | Rings on each attack; the ring around Listen breathes with loudness. If the view is turned away, it settles back on the station after a while. | The station answers the music. |
+| A signal fades | "The signal faded · drifting on", then strayhum drifts by itself. | A dead stream becomes part of the radio, not an error. |
 
-The reach of the same sheet follows the arrangement throughout a station’s continuous stream. An envelope compares recent loudness with a slower baseline and also measures occupied octaves and the density of attacks. A separate spectral balance gently steers the sheet. Sparse passages stay near the city. A sustained build opens toward the horizon. The animation uses the broadcaster’s audio directly and needs no song-boundary or chorus metadata.
+Reduced motion (the system setting or the Motion switch) removes flights, rings and the reveal; listening is unchanged.
 
-## Signal and accessibility
+## Sound
 
-The audio plays directly from each broadcaster. A Web Audio analyser measures approximately 45–240 Hz, 240–2,500 Hz and 2,500–9,500 Hz. The sculpture also has a slow underlying motion, so it can be explored before pressing Play. If a server declines cross-origin analysis, the player retries the stream directly and hides the live meter. A station can still be unavailable because of its server or the listener's network. [MDN — reading live frequency data](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/getByteFrequencyData)
+Every stream plays directly from its broadcaster. Streams that allow cross-origin reading go through an analyser; for the others, the station breathes at a slow even pace instead. The static between stations is synthesised: band-limited noise whose centre wanders like a dial, sparse clicks, and a heterodyne whistle that glides past other carriers. It can be switched off.
 
-The wave button beside Music stations holds the visual motion while audio continues. The initial setting respects the browser's reduced-motion preference. Keyboard users can turn the globe with the arrow keys, zoom with plus and minus, and use the searchable station index. On touch screens a tap previews a city, and activating the caption opens its stations or starts the single station. Exploring during playback keeps the station headline in place. The inverse projection finds the nearest visible station, groups stations in the same city, and reveals one city caption. Arrow keys explore cities and Enter selects one.
+## The stations
 
-## Music directory
+`dist/stations.js` is generated by `scripts/build-stations.py` from the Radio Browser catalogue:
 
-Selecting a directory result commits the full matching list as the Next station queue. Browsing or dismissing a new search leaves that queue intact. The searchable directory ships with the site. Its Radio Browser snapshot includes geolocated HTTPS streams tagged with recognized music genres and marked healthy at export. GeoNames supplies nearby place names and time zones. Stream availability can change. The original stations and manually placed Chinese music stations are in `dist/stations.js`. To rebuild the extended catalog, export Radio Browser stations with `has_geo_info=true`, `hidebroken=true` and an explicit limit, then run `python3 scripts/import-stations.py export.json` with geonamescache installed. The directory credits both sources.
+1. Candidates are scored for music made with a point of view (freeform, community, college, jazz, traditional and regional forms, experimental and electronic subgenres) and against chart and network formats. Countries with few stations get a lift, so the map is not only Europe and North America.
+2. About ninety hand-picked independent and cultural stations are added by name, plus the hand-placed stations in `data/curated-stations.js`.
+3. Every stream is fetched as Chrome and as Safari would fetch it. Only streams that answer with audio are kept; those that send Safari to a plain-http address are marked and never offered to Safari.
+4. Stations are placed on the most populous place within 30 km (Mitte belongs to Berlin), deduplicated by stream and by name, and capped per country, city and host.
+
+```
+python3 -m venv .venv && .venv/bin/pip install geonamescache numpy scipy pillow
+.venv/bin/python scripts/build-stations.py     # stations: fetches and checks, cached in .cache/
+.venv/bin/python scripts/build-coast.py        # dist/coast.png from Natural Earth 1:50m
+```
+
+Stream availability changes; rebuild the stations every few weeks.
+
+## Files
+
+| File | Role |
+| --- | --- |
+| `dist/sky.js` | WebGL2 renderer: the engraved surface, the station lights, the rings. |
+| `dist/globe.js` | Camera, input, flights, the journey lines and the map labels. |
+| `dist/signal.js` | The receiver: playback, static, and onset detection for the rings. |
+| `dist/encounter.js` | Where to drift next, and what to remember (kept, tonight, faded). |
+| `dist/app.js` | Conducts the above; the caption, the deck, the log. |
+| `dist/track.js` | Now-playing titles from FIP, KEXP and Radio Swiss Jazz. |
+
+Kept stations, tonight's route and faded signals stay in the browser's localStorage. Sources: stations from [Radio Browser](https://www.radio-browser.info/), places from [GeoNames](https://www.geonames.org/) (CC BY 4.0), coastlines from [Natural Earth](https://www.naturalearthdata.com/) (public domain).

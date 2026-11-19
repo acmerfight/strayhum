@@ -1,615 +1,477 @@
-/* Orthographic globe. The luminous surface, surface picking and great-circle routes share one rotation. */
-class RadioGlobe {
-  constructor(stations, initialIndex, onSelect) {
-    this.canvas = document.querySelector("#globe");
-    this.sky = document.querySelector("#sky");
+/* The camera and hands of the globe: turning, zooming, flights between stations, the line
+   of tonight's journey, and the small map labels beside the playing and pointed-at stations. */
+const DEG = Math.PI / 180;
+
+class Globe {
+  constructor({ stations, onChoose, onPreview, onInteract }) {
     this.stations = stations;
-    this.selected = initialIndex;
-    const station = stations[this.selected];
-    this.score = scoreForStation(station);
-    this.shape = new Float32Array(this.score.shape);
-    this.trail = 0;
-    this.lon = station.lon + 16;
-    this.lat = station.lat - 19;
+    this.vectors = stations.map((s) => unitVector(s.lat, s.lon));
+    this.onChoose = onChoose;
+    this.onPreview = onPreview;
+    this.onInteract = onInteract;
+    this.sky = new Sky(document.getElementById('sky'), stations);
+    this.ink = document.getElementById('ink');
+    this.pen = this.ink.getContext('2d');
+    this.here = document.getElementById('here');
+    this.near = document.getElementById('near');
+    this.lon = 0;
+    this.lat = 20;
     this.zoom = 1;
-    this.rad = Math.PI / 180;
-    this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.onSelect = onSelect;
-    this.caption = document.querySelector("#surface-caption");
-    this.previewCity = null;
-    this.caption.onclick = (e) => {
-      const i = this.previewCity ?? this.hovered ?? this.selected;
-      if (
-        e.detail &&
-        (this.mobile || e.pointerType === "touch") &&
-        this.previewCity === null
-      )
-        this.preview(i);
-      else this.choose(i);
-    };
-    this.hovered = null;
-    this.cityMembers = new Map();
-    for (const [i, s] of stations.entries()) {
-      const key = this.cityKey(s);
-      if (!this.cityMembers.has(key)) this.cityMembers.set(key, []);
-      this.cityMembers.get(key).push(i);
-    }
-    this.positions = stations.map((s) => {
-      const lat = s.lat * this.rad,
-        lon = s.lon * this.rad;
-      return [
-        Math.cos(lat) * Math.sin(lon),
-        Math.sin(lat),
-        Math.cos(lat) * Math.cos(lon),
-      ];
-    });
-    this.overlay = document.querySelector("#waves");
-    this.ctx = this.overlay.getContext("2d");
-    this.energy = new Float32Array(3);
-    this.time = 0;
-    this.flowPush = 0;
-    this.openness = 0.42;
-    this.timbre = 0.5;
-    this.flowTravel = 0;
-    this.tint = 0;
-    this.sphere = new SignalSphere(this.canvas, () => this.draw());
     this.flightScale = 1;
-    this.listening = false;
-    this.hold = 0;
-    this.strike = 0;
-    this.loudness = 0;
-    this.firstLight = 0;
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.refreshWaves();
-    });
-    this.input();
-    new ResizeObserver(() => this.resize()).observe(this.sky);
+    this.current = null;
+    this.hovered = null;
+    this.previewed = null;
+    this.legs = [];
+    this.rings = [];
+    this.glow = 0;
+    this.level = 0;
+    this.reveal = 0;
+    this.lastTouch = performance.now();
+    this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resize();
-    this.refreshWaves();
-  }
-  resize() {
-    this.w = this.sky.clientWidth;
-    this.h = this.sky.clientHeight;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 1.7);
-    this.renderDpr = Math.min(this.dpr, 1.25, 1650 / this.w);
-    this.canvas.width = Math.round(this.w * this.renderDpr);
-    this.canvas.height = Math.round(this.h * this.renderDpr);
-    this.overlay.width = Math.round(this.w * this.dpr);
-    this.overlay.height = Math.round(this.h * this.dpr);
-    this.mobile = matchMedia(
-      "(max-width:700px),(max-aspect-ratio:4/5)",
-    ).matches;
-    this.cx = this.w * (this.mobile ? 0.5 : 0.655);
-    this.cy = this.h * (this.mobile ? 0.37 : 0.495);
-    this.baseRadius = this.mobile
-      ? Math.min(this.w * 0.378, this.h * 0.216)
-      : Math.min(this.w * 0.24, this.h * 0.348);
-    this.draw();
+    new ResizeObserver(() => this.resize()).observe(document.documentElement);
+    this.input();
   }
 
-  project(lat, lon) {
-    const a = lat * this.rad,
-      b = (lon - this.lon) * this.rad,
-      p = this.lat * this.rad,
-      c = Math.cos(a);
-    return [
-      this.cx + this.radius * c * Math.sin(b),
-      this.cy -
-        this.radius *
-          (Math.sin(a) * Math.cos(p) - c * Math.cos(b) * Math.sin(p)),
-      Math.sin(a) * Math.sin(p) + c * Math.cos(b) * Math.cos(p),
-    ];
+  get ok() {
+    return Boolean(this.sky.gl);
   }
-  draw() {
-    this.radius = this.baseRadius * this.zoom * this.flightScale;
-    if (!this.radius) return;
-    this.sphere.draw(this);
-    this.drawWaves(performance.now());
-    this.drawCaption();
-  }
-  cityKey(s) {
-    return s.country + "|" + s.city;
-  }
-  // Invert the orthographic projection. The nearest place is measured on
-  // the sphere, so a click near the limb never picks a hidden station.
-  nearest(x, y) {
-    const px = (x - this.cx) / this.radius,
-      py = (this.cy - y) / this.radius;
-    const z2 = 1 - px * px - py * py;
-    if (z2 < 0) return null;
-    const z = Math.sqrt(z2),
-      l = this.lon * this.rad,
-      p = this.lat * this.rad;
-    const sl = Math.sin(l),
-      cl = Math.cos(l),
-      sp = Math.sin(p),
-      cp = Math.cos(p);
-    const depth = z * cp - py * sp;
-    const wx = px * cl + depth * sl,
-      wy = py * cp + z * sp,
-      wz = depth * cl - px * sl;
-    let best = -Infinity,
-      chosen = null;
-    for (let i = 0; i < this.positions.length; i++) {
-      const [a, b, c] = this.positions[i];
-      const score = a * wx + b * wy + c * wz;
-      if (score > best && (a * sl + c * cl) * cp + b * sp > 0.015) {
-        best = score;
-        chosen = i;
-      }
+
+  resize() {
+    const w = innerWidth;
+    const h = innerHeight;
+    this.w = w;
+    this.h = h;
+    this.dpr = Math.min(devicePixelRatio || 1, 2);
+    for (const canvas of [this.sky.canvas, this.ink]) {
+      canvas.width = Math.round(w * this.dpr);
+      canvas.height = Math.round(h * this.dpr);
     }
-    return chosen;
+    this.portrait = w < 720 || w / h < 0.8;
+    if (this.portrait) {
+      // On a phone the globe may run past the sides of the screen; its top half is what matters.
+      this.cx = w / 2;
+      this.cy = h * 0.385;
+      this.baseRadius = Math.min(w * 0.56, h * 0.27);
+    } else if (h < 560) {
+      this.cx = w * 0.64;
+      this.cy = h * 0.46;
+      this.baseRadius = Math.min(w * 0.26, h * 0.4);
+    } else {
+      this.cx = w * 0.555;
+      this.cy = h * 0.47;
+      this.baseRadius = Math.min(w * 0.3, h * 0.37);
+    }
   }
+
+  get radius() {
+    return this.baseRadius * this.zoom * this.flightScale;
+  }
+
+  /** World-to-view rotation for the current camera, column-major for WebGL. */
+  view() {
+    const l = this.lon * DEG;
+    const p = this.lat * DEG;
+    const [sl, cl, sp, cp] = [Math.sin(l), Math.cos(l), Math.sin(p), Math.cos(p)];
+    this.rows = [
+      [cl, 0, -sl],
+      [-sp * sl, cp, -sp * cl],
+      [cp * sl, sp, cp * cl],
+    ];
+    const r = this.rows;
+    return new Float32Array([r[0][0], r[1][0], r[2][0], r[0][1], r[1][1], r[2][1], r[0][2], r[1][2], r[2][2]]);
+  }
+
+  /** Screen position and facing (z > 0 is visible) of a unit vector. */
+  project([x, y, z]) {
+    const r = this.rows;
+    const vx = r[0][0] * x + r[0][1] * y + r[0][2] * z;
+    const vy = r[1][0] * x + r[1][1] * y + r[1][2] * z;
+    const vz = r[2][0] * x + r[2][1] * y + r[2][2] * z;
+    return [this.cx + vx * this.radius, this.cy - vy * this.radius, vz];
+  }
+
+  /** The visible station nearest to a screen point, within reach of a finger or pointer. */
+  pick(x, y, reach) {
+    let best = null;
+    let bestDistance = reach;
+    this.vectors.forEach((v, i) => {
+      const [sx, sy, sz] = this.project(v);
+      if (sz < 0.05) return;
+      const distance = Math.hypot(sx - x, sy - y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  setCamera(vector) {
+    this.lat = Math.asin(Math.max(-1, Math.min(1, vector[1]))) / DEG;
+    this.lon = Math.atan2(vector[0], vector[2]) / DEG;
+  }
+
+  center() {
+    return unitVector(this.lat, this.lon);
+  }
+
+  /** Turn the camera to a station along the great circle. Returns when the flight lands. */
+  fly(i, { from = this.current, softly = false } = {}) {
+    const start = performance.now();
+    const origin = this.center();
+    const target = this.vectors[i];
+    const angle = Math.acos(clamp(dot(origin, target), -1, 1));
+    const duration = this.reduced ? 0 : softly ? 1400 : 950 + 1550 * Math.pow(angle / Math.PI, 0.8);
+    if (from !== null && from !== i && !softly) {
+      this.legs.push({ from, to: i, start, duration, at: Date.now() });
+      this.legs = this.legs.slice(-40);
+    }
+    this.flight = { origin, target, angle, start, duration, dip: softly ? 0 : 0.16 * Math.min(1, angle / 1.6) };
+    this.inertia = null;
+    this.flightEnd = start + duration;
+    return this.flightEnd;
+  }
+
+  /** Draws the journey already travelled tonight, without animation. */
+  remember(path) {
+    this.legs = [];
+    for (let k = 1; k < path.length; k++) this.legs.push({ from: path[k - 1].i, to: path[k].i, start: 0, duration: 0, at: path[k].at });
+  }
+
+  focus(i) {
+    const previous = this.current;
+    this.current = i;
+    if (previous !== null && previous !== i) this.sky.mark(previous, this.markOf(previous));
+    this.sky.mark(i, 'current');
+    this.rings = [];
+  }
+
+  markOf(i) {
+    if (i === this.current) return 'current';
+    if (this.kept?.has(i)) return 'kept';
+    if (this.heard?.has(i)) return 'heard';
+    return 'plain';
+  }
+
+  refreshMarks(kept, heard) {
+    this.kept = kept;
+    this.heard = heard;
+    this.stations.forEach((_, i) => this.sky.mark(i, i === this.hovered && i !== this.current ? 'hovered' : this.markOf(i)));
+  }
+
+  /** A ring of sound leaving the station. */
+  ring(strength, speed) {
+    if (this.reduced) return;
+    this.rings.push({ r: 0, s: strength, speed });
+    if (this.rings.length > 8) this.rings.shift();
+  }
+
   hover(i) {
     if (this.hovered === i) return;
+    if (this.hovered !== null) this.sky.mark(this.hovered, this.markOf(this.hovered));
     this.hovered = i;
-    this.drawCaption();
+    if (i !== null && i !== this.current) this.sky.mark(i, 'hovered');
   }
-  preview(i) {
-    this.previewCity = i;
-    this.hovered = null;
-    this.drawCaption();
-  }
-  drawCaption() {
-    const i = this.previewCity ?? this.hovered ?? this.selected,
-      s = this.stations[i];
-    const [x, y, z] = this.project(s.lat, s.lon);
-    const el = this.caption;
-    el.hidden = z < 0.015;
-    if (el.hidden) return;
-    const discovering = this.hovered !== null;
-    const count = this.cityMembers.get(this.cityKey(s)).length;
-    const preview = this.previewCity !== null;
-    const label =
-      s.city + (!preview && discovering && count > 1 ? " · " + count : "");
-    const action = preview ? (count > 1 ? count + " stations" : "Play") : "";
-    if (el.dataset.action !== action) el.dataset.action = action;
-    if (el.textContent !== label) el.textContent = label;
-    const description =
-      this.mobile && !preview
-        ? "Explore " + s.city
-        : count > 1
-          ? "Browse " + count + " stations in " + s.city
-          : "Play " + s.name + " in " + s.city;
-    if (el.getAttribute("aria-label") !== description)
-      el.setAttribute("aria-label", description);
-    el.classList.toggle("discovering", discovering);
-    if (preview) {
-      el.style.maxWidth = Math.max(90, Math.max(x, this.w - x) - 32) + "px";
-      el.classList.toggle("inward", x + el.offsetWidth + 25 > this.w);
-    } else {
-      el.style.maxWidth = "";
-      el.classList.toggle("inward", x > this.w - Math.min(170, this.w * 0.3));
+
+  step(now, dt) {
+    const f = this.flight;
+    if (f) {
+      const t = f.duration ? Math.min(1, (now - f.start) / f.duration) : 1;
+      const e = t * t * t * (t * (t * 6 - 15) + 10);
+      this.setCamera(slerp(f.origin, f.target, f.angle, e));
+      this.flightScale = 1 - f.dip * Math.sin(Math.PI * t) ** 2;
+      if (t >= 1) {
+        this.flight = null;
+        this.flightScale = 1;
+      }
+    } else if (this.inertia) {
+      const decay = Math.exp(-dt / 0.32);
+      this.lon += this.inertia[0] * dt;
+      this.lat = clamp(this.lat + this.inertia[1] * dt, -80, 80);
+      this.inertia = [this.inertia[0] * decay, this.inertia[1] * decay];
+      if (Math.hypot(...this.inertia) < 0.5) this.inertia = null;
+    } else if (!this.dragging && !this.reduced) {
+      const idle = now - this.lastTouch;
+      if (this.current !== null && this.playing && idle > 11000) {
+        // Like a compass needle, the view settles back on the station that is playing.
+        const away = Math.acos(clamp(dot(this.center(), this.vectors[this.current]), -1, 1)) / DEG;
+        if (away > 7) this.fly(this.current, { softly: true });
+      } else if (!this.playing && idle > 3500) {
+        this.lon += 2.2 * dt;
+      }
     }
-    el.style.left = x + "px";
-    el.style.top = y + "px";
+    for (const ring of this.rings) {
+      ring.r += ring.speed * dt;
+      ring.s *= Math.exp(-dt / 1.6);
+    }
+    this.rings = this.rings.filter((ring) => ring.r < 1.9 && ring.s > 0.02);
   }
-  choose(i) {
-    if (i === null) return;
-    this.preview(null);
-    const members = this.cityMembers.get(this.cityKey(this.stations[i]));
-    this.hover(null);
-    if (members.length === 1) this.onSelect(i);
-    else this.onCluster(members);
+
+  frame(now, dt, sound) {
+    this.step(now, dt);
+    this.level += ((sound?.level ?? 0) - this.level) * Math.min(1, dt * 12);
+    this.glow += ((sound?.sustain ?? 0) - this.glow) * Math.min(1, dt * 2);
+    const view = this.view();
+    const rings = new Float32Array(16);
+    this.rings.forEach((ring, k) => {
+      rings[2 * k] = ring.r;
+      rings[2 * k + 1] = ring.s;
+    });
+    this.sky.render({
+      width: this.sky.canvas.width,
+      height: this.sky.canvas.height,
+      dpr: this.dpr,
+      cx: this.cx,
+      cy: this.cy,
+      radius: this.radius,
+      view,
+      sun: this.sun || (this.sun = sunDirection(new Date())),
+      beacon: this.current === null ? [0, 0, 1] : this.vectors[this.current],
+      beaconOn: this.current === null ? 0 : this.beaconOn ?? 0,
+      rings,
+      ringWidth: 0.016,
+      glow: this.glow,
+      reveal: this.reveal,
+      time: now / 1000,
+      twinkle: this.reduced ? 0 : 1,
+      level: this.level,
+    });
+    this.drawInk(now);
+    this.placeLabels();
   }
-  rotate(lon, lat) {
-    this.lon = ((((lon + 540) % 360) + 360) % 360) - 180;
-    this.lat = Math.max(-84, Math.min(84, lat));
-    this.draw();
-  }
-  drawWaves(now) {
-    const c = this.ctx;
-    if (!this.radius) return;
+
+  drawInk(now) {
+    const c = this.pen;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
-    this.drawJourney(now);
-    // Without WebGL, one curved wash follows the same audio spring.
-    if (
-      !this.sphere.gl &&
-      this.listening &&
-      this.loudness > 0.015 &&
-      !this.reduced
-    ) {
-      const s = this.stations[this.selected],
-        [x, y, z] = this.project(s.lat, s.lon);
-      if (z <= 0) return;
-      const push = this.flowPush,
-        travel = this.flowTravel;
-      const extent =
-        this.radius * (0.12 + 0.38 * this.openness + 0.11 * this.hold);
-      const [snap, swing, sweep] = this.shape;
-      const offset =
-        this.radius *
-        ((0.26 + 0.1 * snap - 0.17 * sweep) * push +
-          (0.065 + 0.06 * swing) * Math.sin(travel) +
-          0.24 * sweep * this.hold);
-      const side = this.radius * swing * (this.trail - push) * 0.32;
-      c.save();
-      c.beginPath();
-      c.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
-      c.clip();
-      c.translate(x + offset * 0.85 + side, y - offset * 0.5 + side * 0.45);
-      c.rotate(
-        -0.51 +
-          (0.14 + 0.25 * swing) * Math.sin(travel) +
-          0.3 * sweep * this.hold +
-          (this.timbre - 0.5) * 0.75,
-      );
-      c.scale(1.5 + 0.48 * sweep, 0.82 - 0.32 * snap + 0.17 * sweep);
-      const halo = c.createRadialGradient(0, 0, 0, 0, 0, extent);
-      halo.addColorStop(0, "rgba(110,184,178,.08)");
-      halo.addColorStop(0.58, "rgba(197,218,196," + (0.12 + 0.26 * push) + ")");
-      halo.addColorStop(1, "rgba(197,218,196,0)");
-      c.fillStyle = halo;
-      c.beginPath();
-      c.moveTo(-extent, 0);
-      c.bezierCurveTo(
-        -0.4 * extent,
-        -extent,
-        extent,
-        -0.75 * extent,
-        0.92 * extent,
-        0,
-      );
-      c.bezierCurveTo(
-        0.58 * extent,
-        0.6 * extent,
-        -0.65 * extent,
-        0.9 * extent,
-        -extent,
-        0,
-      );
-      c.fill();
-      c.restore();
-    }
+    if (!this.ok) this.drawFallback(c);
+    const latest = this.legs.length - 1;
+    this.legs.forEach((leg, k) => {
+      const t = leg.duration ? clamp((now - leg.start) / leg.duration, 0, 1) : 1;
+      if (t <= 0) return;
+      const e = t * t * t * (t * (t * 6 - 15) + 10);
+      const fresh = k === latest;
+      const age = latest - k;
+      c.strokeStyle = fresh ? 'rgba(255,169,77,.78)' : `rgba(233,227,214,${Math.max(0.1, 0.36 - age * 0.03)})`;
+      c.lineWidth = fresh ? 1.1 : 0.8;
+      this.arc(c, this.vectors[leg.from], this.vectors[leg.to], e);
+      if (fresh && t < 1) {
+        const a = this.vectors[leg.from];
+        const b = this.vectors[leg.to];
+        const head = slerp(a, b, Math.acos(clamp(dot(a, b), -1, 1)), e);
+        const [x, y, z] = this.project(head);
+        if (z > 0) {
+          c.fillStyle = '#ffe2bd';
+          c.shadowColor = '#ffa94d';
+          c.shadowBlur = 12;
+          c.beginPath();
+          c.arc(x, y, 1.8, 0, Math.PI * 2);
+          c.fill();
+          c.shadowBlur = 0;
+        }
+      }
+    });
   }
-  drawJourney(now) {
-    if (!this.journey || this.reduced) return;
-    const t = (now - this.journey.start) / 1950;
-    if (t >= 1) {
-      this.journey = null;
-      return;
-    }
-    const c = this.ctx;
-    let penDown = false;
+
+  /** A great-circle arc between two stations, drawn only where it faces the viewer. */
+  arc(c, a, b, until) {
+    const angle = Math.acos(clamp(dot(a, b), -1, 1));
+    if (angle < 1e-4) return;
+    const steps = Math.max(8, Math.ceil(angle * 48));
+    // Long legs rise a little off the surface, like a flight path.
+    const lift = 0.035 * Math.min(1, angle / 1.2);
     c.beginPath();
-    for (let k = 0; k <= 90; k++) {
-      const f = k / 90;
-      if (f > Math.min(1, t * 1.65)) break;
-      const [lat, lon] = this.journey.path[k],
-        [x, y, z] = this.project(lat, lon);
-      if (z > 0) {
-        if (penDown) c.lineTo(x, y);
-        else c.moveTo(x, y);
-      }
-      penDown = z > 0;
+    let down = false;
+    for (let k = 0; k <= steps * until; k++) {
+      const t = k / steps;
+      const p = slerp(a, b, angle, t);
+      const h = 1 + lift * Math.sin(Math.PI * t);
+      const [x, y, z] = this.project([p[0] * h, p[1] * h, p[2] * h]);
+      const visible = z > -0.02;
+      if (visible && down) c.lineTo(x, y);
+      else if (visible) c.moveTo(x, y);
+      down = visible;
     }
-    if (penDown) {
-      const head =
-        this.journey.path[Math.min(90, Math.floor(Math.min(1, t * 1.65) * 90))];
-      const [x, y, z] = this.project(...head);
-      if (z > 0) {
-        c.save();
-        c.fillStyle = "#fff0ce";
-        c.shadowColor = "#ffd99f";
-        c.shadowBlur = 10;
-        c.fillRect(x - 1.6, y - 1.6, 3.2, 3.2);
-        c.restore();
-      }
-    }
-    c.strokeStyle = "rgba(253,211,161," + 0.63 * Math.min(1, (1 - t) * 3) + ")";
-    c.lineWidth = 1.2;
     c.stroke();
   }
-  stationRoute(from, to) {
-    const vector = (s) => {
-      const a = s.lat * this.rad,
-        b = s.lon * this.rad;
-      return [
-        Math.cos(a) * Math.sin(b),
-        Math.sin(a),
-        Math.cos(a) * Math.cos(b),
-      ];
-    };
-    const a = vector(from),
-      b = vector(to),
-      angle = Math.acos(
-        Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])),
-      ),
-      sinAngle = Math.sin(angle);
-    if (Math.abs(sinAngle) < 0.001) return null;
-    const path = Array.from({ length: 91 }, (_, i) => {
-      const left = Math.sin((1 - i / 90) * angle) / sinAngle,
-        right = Math.sin((i / 90) * angle) / sinAngle;
-      return [
-        Math.asin(Math.max(-1, Math.min(1, a[1] * left + b[1] * right))) /
-          this.rad,
-        Math.atan2(a[0] * left + b[0] * right, a[2] * left + b[2] * right) /
-          this.rad,
-      ];
-    });
-    return { start: performance.now(), path };
+
+  drawFallback(c) {
+    c.strokeStyle = 'rgba(233,227,214,.35)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = 'rgba(233,227,214,.6)';
+    for (const v of this.vectors) {
+      const [x, y, z] = this.project(v);
+      if (z > 0) c.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
+    }
   }
-  refreshWaves() {
-    cancelAnimationFrame(this.waveFrame);
-    if (document.hidden || this.reduced) return;
-    let last = 0;
-    const step = (now) => {
-      if (document.hidden || this.reduced) return;
-      const interval = this.sphere.gl ? 33 : 66;
-      if (!last || now - last >= interval) {
-        const delta = last ? Math.min(80, now - last) / 1000 : 0;
-        last = now;
-        const responsive = this.listening && this.signal?.analyser;
-        const measured = responsive
-          ? this.signal.sample(delta, this.score)
-          : null;
-        // Crossfade from the resting sculpture when audio becomes available.
-        const opening = responsive ? this.signal.openness : 0.42;
-        this.openness +=
-          (opening - this.openness) * (1 - Math.exp(-delta / 0.48));
-        this.timbre +=
-          ((responsive ? this.signal.timbre : 0.5) - this.timbre) *
-          (1 - Math.exp(-delta / 0.65));
-        this.flowPush = responsive
-          ? this.signal.displacement
-          : this.flowPush * Math.exp(-delta * 5);
-        for (let i = 0; i < 3; i++)
-          this.shape[i] +=
-            (this.score.shape[i] - this.shape[i]) *
-            (1 - Math.exp(-delta / 0.38));
-        this.trail +=
-          (this.flowPush - this.trail) * (1 - Math.exp(-delta / 0.31));
-        const [snap, swing, sweep] = this.shape;
-        this.flowTravel +=
-          delta *
-          ((2.85 - 1.85 * snap - 2.1 * sweep) * this.flowPush +
-            (responsive
-              ? this.signal.level * (0.4 + 0.27 * swing) +
-                this.signal.sustain * 0.72 * sweep
-              : 0));
-        this.strike = responsive ? this.signal.attack : 0;
-        this.hold = responsive ? this.signal.sustain : 0;
-        this.loudness = responsive ? this.signal.level : 0;
-        if (
-          this.awaitingSound &&
-          responsive &&
-          now >= (this.flightEnd || 0) &&
-          this.loudness > 0.015
-        ) {
-          this.firstLight = now;
-          this.awaitingSound = false;
-        }
-        if (measured) this.energy.set(measured);
-        else this.energy.fill(0);
-        this.time +=
-          delta *
-          (responsive
-            ? Math.min(1, this.loudness * 7) * (0.27 + this.hold * 1.7)
-            : this.listening
-              ? 0.22
-              : 0.075);
-        this.tint +=
-          (((this.selected * 0.618) % 1) - this.tint) *
-          Math.min(1, delta * 1.5);
-        if (this.sphere.gl) this.sphere.draw(this);
-        this.drawWaves(now);
-        this.drawSpectrum();
+
+  placeLabels() {
+    const pointed = this.previewed ?? this.hovered;
+    const pointing = pointed !== null && pointed !== this.current;
+    // One label at a time near the pointer, so two names never print over each other.
+    this.label(this.here, this.current, this.current !== null && !this.flight && !pointing);
+    this.label(this.near, pointed, pointing);
+  }
+
+  label(el, i, show) {
+    let visible = false;
+    if (show && i !== null) {
+      const [x, y, z] = this.project(this.vectors[i]);
+      visible = z > 0.08;
+      if (visible) {
+        // Labels sit to the right of their light, else to the left; if neither fits, centred below it.
+        const box = el.firstElementChild;
+        const width = box.offsetWidth;
+        const right = x + 22 + width <= this.w;
+        const left = !right && x - 22 - width >= 0;
+        const below = !right && !left;
+        el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+        el.classList.toggle('left', left);
+        el.classList.toggle('below', below);
+        box.style.left = below ? `${Math.round(clamp(x - width / 2, 10, this.w - 10 - width) - x)}px` : '';
       }
-      this.waveFrame = requestAnimationFrame(step);
-    };
-    this.waveFrame = requestAnimationFrame(step);
-  }
-  drawSpectrum() {
-    const signal = this.signal;
-    if (!this.listening || !signal?.analyser) return;
-    const canvas = document.querySelector("#spectrum"),
-      c = canvas.getContext("2d");
-    c.clearRect(0, 0, canvas.width, canvas.height);
-    c.fillStyle = "#cdb497";
-    for (let i = 0; i < 16; i++) {
-      const bin = Math.min(511, Math.floor(1.47 ** i)),
-        v = signal.bins[bin] / 255;
-      c.fillRect(i * 4.7, 29 - v * 25, 2, 2 + v * 25);
     }
+    el.classList.toggle('shown', visible);
   }
-  setReduced(reduced) {
-    this.reduced = reduced;
-    this.cancelFlight();
-    this.journey = null;
-    if (reduced) this.rotate(this.lon, this.lat);
-    this.refreshWaves();
-  }
-  broadcast(active) {
-    if (active !== this.listening) {
-      this.awaitingSound = active;
-      this.firstLight = 0;
-    }
-    this.listening = active;
-    this.refreshWaves();
-  }
-  focus(i) {
-    this.cancelFlight();
-    this.journey = this.reduced
-      ? null
-      : this.stationRoute(this.stations[this.selected], this.stations[i]);
-    this.preview(null);
-    this.selected = i;
-    this.score = scoreForStation(this.stations[i]);
-    if (this.reduced) this.shape.set(this.score.shape);
-    this.refreshWaves();
-    const target = this.stations[i],
-      start = performance.now(),
-      lon = this.lon,
-      lat = this.lat;
-    const delta = ((target.lon - lon + 540) % 360) - 180,
-      travel = Math.min(1, Math.abs(delta) / 90);
-    const duration = 970 + 1050 * travel;
-    this.flightEnd = this.reduced ? 0 : start + duration;
-    const step = (now) => {
-      const t = this.reduced ? 1 : Math.min(1, (now - start) / duration);
-      const e = t * t * t * (t * (t * 6 - 15) + 10);
-      this.flightScale = 1 - 0.17 * travel * Math.sin(t * Math.PI) ** 2;
-      this.rotate(lon + delta * e, lat + (target.lat - lat) * e);
-      if (t < 1) this.frame = requestAnimationFrame(step);
-    };
-    step(start);
-  }
-  cancelFlight() {
-    cancelAnimationFrame(this.frame);
-    this.flightEnd = 0;
-    this.flightScale = 1;
-  }
-  scale(factor) {
-    this.zoom = Math.max(0.72, Math.min(1.65, this.zoom * factor));
-    this.resize();
-  }
+
   input() {
-    const canvas = this.canvas;
+    const canvas = this.ink;
     const pointers = new Map();
-    let anchor,
-      span = 0,
-      vx = 0,
-      vy = 0,
-      lastMove = 0;
-    let tapOrigin = null;
-    const pick = (e) => {
-      const bounds = canvas.getBoundingClientRect();
-      const x = e.clientX - bounds.left,
-        y = e.clientY - bounds.top;
-      const station = this.stations[this.selected],
-        [sx, sy, z] = this.project(station.lat, station.lon);
-      if (z > 0.015 && Math.hypot(x - sx, y - sy) < (this.mobile ? 14 : 9))
-        return this.selected;
-      return this.nearest(x, y);
-    };
-    canvas.onpointerleave = (e) => {
-      if (e.relatedTarget !== this.caption) this.hover(null);
-    };
-    this.caption.onpointerleave = (e) => {
-      if (e.relatedTarget !== canvas) this.hover(null);
-    };
-    canvas.onblur = (e) => {
-      if (e.relatedTarget !== this.caption) this.hover(null);
-    };
-    const pairDistance = () => {
-      const p = [...pointers.values()];
-      return Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
-    };
-    function reset() {
-      anchor = pointers.size === 1 ? [...pointers.values()][0] : null;
-      span = pointers.size === 2 ? pairDistance() : 0;
-    }
-    canvas.onpointerdown = (e) => {
+    let last = null;
+    let tap = null;
+    let span = 0;
+    const touchReach = () => (matchMedia('(pointer: coarse)').matches ? 30 : 16);
+    const local = (e) => [e.clientX, e.clientY];
+
+    canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      this.cancelFlight();
-      vx = vy = 0;
-      lastMove = performance.now();
-      pointers.set(e.pointerId, [e.clientX, e.clientY]);
-      tapOrigin = pointers.size === 1 ? [e.clientX, e.clientY] : null;
       canvas.setPointerCapture(e.pointerId);
-      reset();
-    };
-    canvas.onpointermove = (e) => {
+      pointers.set(e.pointerId, local(e));
+      this.flight = null;
+      this.flightScale = 1;
+      this.inertia = null;
+      this.touch();
+      tap = pointers.size === 1 ? { x: e.clientX, y: e.clientY, at: performance.now() } : null;
+      last = { x: e.clientX, y: e.clientY, at: performance.now(), vx: 0, vy: 0 };
+      if (pointers.size === 2) span = pairDistance(pointers);
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
       if (!pointers.has(e.pointerId)) {
-        if (e.pointerType === "mouse") this.hover(pick(e));
-        return;
-      }
-      if (
-        tapOrigin &&
-        Math.hypot(e.clientX - tapOrigin[0], e.clientY - tapOrigin[1]) < 6
-      )
-        return;
-      tapOrigin = null;
-      if (this.previewCity !== null) this.preview(null);
-      this.hover(null);
-      pointers.set(e.pointerId, [e.clientX, e.clientY]);
-      if (pointers.size === 2) {
-        const distance = pairDistance();
-        if (distance && span) this.scale(distance / span);
-        span = distance;
-      } else if (anchor) {
-        const f = 68 / this.radius,
-          dx = -(e.clientX - anchor[0]) * f,
-          dy = (e.clientY - anchor[1]) * f,
-          now = performance.now(),
-          dt = Math.max(8, now - lastMove);
-        vx = 0.55 * vx + (0.45 * dx) / dt;
-        vy = 0.55 * vy + (0.45 * dy) / dt;
-        lastMove = now;
-        this.rotate(this.lon + dx, this.lat + dy);
-        if ((dx || dy) && this.onFirstOrbit) {
-          this.onFirstOrbit();
-          this.onFirstOrbit = null;
+        if (e.pointerType === 'mouse') {
+          const i = this.pick(e.clientX, e.clientY, touchReach());
+          this.hover(i);
+          canvas.style.cursor = i === null ? 'grab' : 'pointer';
+          if (i !== null) this.onPreview(i, false);
         }
-        anchor = [e.clientX, e.clientY];
+        return;
       }
-    };
-    canvas.onpointerup = (e) => {
+      pointers.set(e.pointerId, local(e));
+      if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6) return;
+      tap = null;
+      this.dragging = true;
+      this.hover(null);
+      this.touch();
+      if (pointers.size === 2) {
+        const distance = pairDistance(pointers);
+        if (span) this.scale(distance / span);
+        span = distance;
+        return;
+      }
+      const now = performance.now();
+      const dt = Math.max(8, now - last.at) / 1000;
+      const k = 57 / this.radius;
+      const dLon = -(e.clientX - last.x) * k;
+      const dLat = (e.clientY - last.y) * k;
+      this.lon += dLon;
+      this.lat = clamp(this.lat + dLat, -80, 80);
+      last = { x: e.clientX, y: e.clientY, at: now, vx: 0.6 * last.vx + (0.4 * dLon) / dt, vy: 0.6 * last.vy + (0.4 * dLat) / dt };
+      canvas.style.cursor = 'grabbing';
+    });
+
+    const release = (e) => {
       if (!pointers.has(e.pointerId)) return;
-      const tapped =
-        tapOrigin &&
-        Math.hypot(e.clientX - tapOrigin[0], e.clientY - tapOrigin[1]) < 6;
-      tapOrigin = null;
       pointers.delete(e.pointerId);
-      reset();
-      if (tapped) {
-        const i = pick(e);
-        if (this.mobile || e.pointerType === "touch") this.preview(i);
-        else this.choose(i);
-        return;
+      span = pointers.size === 2 ? pairDistance(pointers) : 0;
+      if (pointers.size) return;
+      this.dragging = false;
+      canvas.style.cursor = 'grab';
+      if (tap && e.type === 'pointerup') {
+        const i = this.pick(e.clientX, e.clientY, touchReach() + 8);
+        if (e.pointerType === 'mouse') {
+          if (i !== null) this.onChoose(i);
+        } else if (i !== null) {
+          this.previewed = i;
+          this.onPreview(i, true);
+        } else {
+          this.previewed = null;
+          this.onPreview(null, true);
+        }
+      } else if (last && performance.now() - last.at < 80 && !this.reduced) {
+        this.inertia = [clamp(last.vx, -240, 240), clamp(last.vy, -180, 180)];
       }
-      if (pointers.size || this.reduced || performance.now() - lastMove > 75)
-        return;
-      const start = performance.now(),
-        lon = this.lon,
-        lat = this.lat,
-        dx = Math.max(-22, Math.min(22, 180 * vx)),
-        dy = Math.max(-18, Math.min(18, 180 * vy));
-      if (Math.hypot(dx, dy) < 0.4) return;
-      const coast = (now) => {
-        const t = (now - start) / 160,
-          e = 1 - Math.exp(-t);
-        this.rotate(lon + dx * e, lat + dy * e);
-        if (t < 4) this.frame = requestAnimationFrame(coast);
-      };
-      this.frame = requestAnimationFrame(coast);
+      tap = null;
     };
-    canvas.onpointercancel = canvas.onlostpointercapture = (e) => {
-      tapOrigin = null;
-      pointers.delete(e.pointerId);
-      reset();
-    };
-    canvas.onwheel = (e) => {
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+    canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'mouse' && !pointers.size) {
+        this.hover(null);
+        this.onPreview(null, false);
+      }
+    });
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.touch();
+        this.scale(Math.exp(-clamp(e.deltaY, -60, 60) * 0.0025));
+      },
+      { passive: false },
+    );
+    canvas.addEventListener('keydown', (e) => {
+      const turn = { ArrowLeft: [-8, 0], ArrowRight: [8, 0], ArrowUp: [0, 6], ArrowDown: [0, -6] }[e.key];
+      if (!turn) return;
       e.preventDefault();
-      this.preview(null);
-      this.scale(Math.exp(-Math.sign(e.deltaY) * 0.055));
-    };
-    canvas.onkeydown = (e) => {
-      const keys = {
-        ArrowLeft: [-9, 0],
-        ArrowRight: [9, 0],
-        ArrowUp: [0, 8],
-        ArrowDown: [0, -8],
-      };
-      if (keys[e.key]) {
-        e.preventDefault();
-        this.cancelFlight();
-        this.preview(null);
-        this.rotate(this.lon + keys[e.key][0], this.lat + keys[e.key][1]);
-        this.hover(this.nearest(this.cx, this.cy));
-        document.getElementById("keyboard-city").textContent =
-          this.caption.getAttribute("aria-label");
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        this.choose(
-          this.previewCity ?? this.hovered ?? this.nearest(this.cx, this.cy),
-        );
-      } else if (["+", "=", "-"].includes(e.key)) {
-        e.preventDefault();
-        this.preview(null);
-        this.scale(e.key === "-" ? 0.9 : 1.1);
-      }
-    };
+      e.stopPropagation();
+      this.touch();
+      this.flight = null;
+      this.lon += turn[0];
+      this.lat = clamp(this.lat + turn[1], -80, 80);
+    });
   }
+
+  touch() {
+    this.lastTouch = performance.now();
+    this.onInteract?.();
+  }
+
+  scale(factor) {
+    this.zoom = clamp(this.zoom * factor, 0.8, 3.4);
+  }
+}
+
+function slerp(a, b, angle, t) {
+  if (angle < 1e-5) return b;
+  const s = Math.sin(angle);
+  const u = Math.sin((1 - t) * angle) / s;
+  const v = Math.sin(t * angle) / s;
+  return [a[0] * u + b[0] * v, a[1] * u + b[1] * v, a[2] * u + b[2] * v];
+}
+
+function dot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function clamp(x, lo, hi) {
+  return Math.max(lo, Math.min(hi, x));
+}
+
+function pairDistance(pointers) {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
