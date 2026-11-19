@@ -14,16 +14,16 @@ class RadioGlobe {
     this.zoom = 1;
     this.rad = Math.PI / 180;
     this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.pins = stations.map((s, i) => {
-      const pin = document.createElement("button");
-      pin.className = "pin";
-      pin.setAttribute("aria-label", "Tune to " + s.name + " in " + s.city);
-      const label = document.createElement("span");
-      label.textContent = s.city;
-      pin.append(label, document.createElement("i"));
-      pin.addEventListener("click", () => onSelect(i));
-      document.querySelector("#pins").append(pin);
-      return pin;
+    this.onSelect = onSelect;
+    this.pins = [];
+    this.positions = stations.map((s) => {
+      const lat = s.lat * this.rad,
+        lon = s.lon * this.rad;
+      return [
+        Math.cos(lat) * Math.sin(lon),
+        Math.sin(lat),
+        Math.cos(lat) * Math.cos(lon),
+      ];
     });
     this.overlay = document.querySelector("#waves");
     this.ctx = this.overlay.getContext("2d");
@@ -84,38 +84,83 @@ class RadioGlobe {
     if (!this.radius) return;
     this.sphere.draw(this);
     this.drawWaves(performance.now());
-    // Separate nearby city hit targets on small globes, keeping the selected city anchored.
-    const occupied = [];
-    const points = this.stations.map((s, i) => ({
-      i,
-      point: this.project(s.lat, s.lon),
-    }));
-    points.sort((a, b) => (b.i === this.selected) - (a.i === this.selected));
-    for (const {
-      i,
-      point: [px, py, z],
-    } of points) {
-      const pin = this.pins[i];
-      pin.hidden = z < 0.09;
-      if (pin.hidden) continue;
-      let x = px,
-        y = py;
-      for (
-        let j = 0;
-        j < 24 && occupied.some((p) => Math.hypot(x - p[0], y - p[1]) < 26);
-        j++
-      ) {
-        const angle = j * 2.4,
-          offset = 17 + 2 * j;
-        x = px + Math.cos(angle) * offset;
-        y = py + Math.sin(angle) * offset;
+    this.drawPins();
+  }
+  drawPins() {
+    // Merge projected stations within a fingertip of each other. Preserve the
+    // current station's position even when it belongs to a larger group.
+    const gap = this.mobile ? 40 : 52;
+    const buckets = new Map(),
+      groups = [];
+    const l = this.lon * this.rad,
+      p = this.lat * this.rad;
+    const sl = Math.sin(l),
+      cl = Math.cos(l),
+      sp = Math.sin(p),
+      cp = Math.cos(p);
+    const key = (x, y) => x + y * 65536;
+    const add = (i) => {
+      const [ax, ay, az] = this.positions[i];
+      const depth = ax * sl + az * cl;
+      if (ay * sp + depth * cp < 0.09) return;
+      const x = this.cx + this.radius * (ax * cl - az * sl);
+      const y = this.cy - this.radius * (ay * cp - depth * sp);
+      const col = Math.floor(x / gap),
+        row = Math.floor(y / gap);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++) {
+          const neighbors = buckets.get(key(col + dx, row + dy));
+          if (!neighbors) continue;
+          for (const group of neighbors) {
+            if ((group.x - x) ** 2 + (group.y - y) ** 2 < gap * gap) {
+              group.members.push(i);
+              return;
+            }
+          }
+        }
+      const cell = key(col, row);
+      const group = { x, y, members: [i] };
+      if (!buckets.has(cell)) buckets.set(cell, []);
+      buckets.get(cell).push(group);
+      groups.push(group);
+    };
+    add(this.selected);
+    for (let i = 0; i < this.positions.length; i++)
+      if (i !== this.selected) add(i);
+    groups.forEach(({ x, y, members }, slot) => {
+      let pin = this.pins[slot];
+      if (!pin) {
+        pin = document.createElement("button");
+        pin.className = "pin";
+        pin.append(document.createElement("span"), document.createElement("i"));
+        pin.onclick = () => {
+          const entries = pin.members;
+          if (entries.length === 1) this.onSelect(entries[0]);
+          else this.onCluster(entries);
+        };
+        document.getElementById("pins").append(pin);
+        this.pins.push(pin);
       }
-      occupied.push([x, y]);
+      const i = members[0],
+        s = this.stations[i];
+      const title =
+        members.length === 1
+          ? "Tune to " + s.name + " in " + s.city
+          : "Browse " + members.length + " stations near " + s.city;
+      if (pin.getAttribute("aria-label") !== title) {
+        pin.setAttribute("aria-label", title);
+        pin.firstChild.textContent =
+          s.city + (members.length > 1 ? " · " + members.length : "");
+      }
+      pin.hidden = false;
+      pin.members = members;
       pin.style.left = x + "px";
       pin.style.top = y + "px";
       pin.classList.toggle("active", i === this.selected);
-      pin.classList.toggle("left", x > this.w - 95);
-    }
+      pin.classList.toggle("left", x > this.w - 125);
+    });
+    for (let i = groups.length; i < this.pins.length; i++)
+      this.pins[i].hidden = true;
   }
   rotate(lon, lat) {
     this.lon = ((((lon + 540) % 360) + 360) % 360) - 180;

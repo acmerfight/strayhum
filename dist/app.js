@@ -262,29 +262,79 @@ function toggle() {
     setState("paused");
   } else tune();
 }
-const family = $("family");
-for (const value of [
-  ...new Set(STATIONS.map((s) => s.family || s.genre)),
-].sort()) {
-  const option = document.createElement("option");
-  option.value = value;
-  option.textContent = value;
-  family.append(option);
+const family = $("family"),
+  country = $("country"),
+  picker = $("picker");
+const stationGenres = (s) => s.families || [s.family || s.genre];
+const fold = (value) =>
+  value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+const stationIndex = STATIONS.map((s, i) => ({
+  i,
+  s,
+  text: fold(
+    [
+      s.name,
+      s.alias || "",
+      s.country === "China" ? "中国" : "",
+      s.city,
+      s.country,
+      s.genre,
+      s.frequency,
+      ...stationGenres(s),
+      ...(s.genres || []),
+    ].join(" "),
+  ),
+}));
+function addOptions(select, values) {
+  for (const value of [...new Set(values)].sort((a, b) =>
+    a.localeCompare(b, "en"),
+  ))
+    select.add(new Option(value, value));
+}
+addOptions(
+  country,
+  STATIONS.map((s) => s.country),
+);
+addOptions(family, STATIONS.flatMap(stationGenres));
+function matchesFilters(s) {
+  return (
+    (!family.value || stationGenres(s).includes(family.value)) &&
+    (!country.value || s.country === country.value)
+  );
 }
 $("play").onclick = toggle;
 $("next").onclick = () => {
-  const picks = STATIONS.map((s, i) => ({ s, i })).filter(
-    ({ s }) => !family.value || (s.family || s.genre) === family.value,
-  );
+  const picks = stationIndex.filter(({ s }) => matchesFilters(s));
   const current = picks.findIndex((p) => p.i === index);
   if (picks.length) select(picks[(current + 1) % picks.length].i);
 };
-const picker = $("picker");
+let area = null;
+globe.onCluster = (members) => {
+  area = new Set(members);
+  $("area").textContent = "Near " + STATIONS[members[0]].city + "  ×";
+  $("area").setAttribute(
+    "aria-label",
+    "Clear map area near " + STATIONS[members[0]].city,
+  );
+  $("area").hidden = false;
+  country.value = family.value = $("search").value = "";
+  openPicker();
+};
+$("area").onclick = () => {
+  area = null;
+  $("area").hidden = true;
+  drawList();
+};
 $("browse").onclick = () => {
+  area = null;
+  $("area").hidden = true;
+  openPicker();
+};
+function openPicker() {
   drawList();
   picker.showModal();
   $("search").focus();
-};
+}
 $("close").onclick = () => picker.close();
 picker.onclick = (e) => {
   if (e.target === picker) {
@@ -298,18 +348,34 @@ picker.onclick = (e) => {
       picker.close();
   }
 };
+let results = [],
+  shown = 0;
 function drawList() {
-  const q = $("search").value.trim().toLowerCase();
-  $("list").replaceChildren();
-  STATIONS.forEach((s, i) => {
-    if (family.value && (s.family || s.genre) !== family.value) return;
-    if (
-      ![s.name, s.city, s.country, s.genre, s.family, s.frequency]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    )
-      return;
+  const terms = fold($("search").value.trim()).split(/\s+/).filter(Boolean);
+  results = stationIndex.filter(
+    ({ s, i, text }) =>
+      (!area || area.has(i)) &&
+      matchesFilters(s) &&
+      terms.every((q) => text.includes(q)),
+  );
+  const list = $("list");
+  list.replaceChildren();
+  list.scrollTop = 0;
+  shown = 0;
+  const count = results.length;
+  $("count").textContent =
+    count.toLocaleString("en") + (count === 1 ? " station" : " stations");
+  if (!count) {
+    const msg = document.createElement("p");
+    msg.className = "empty";
+    msg.textContent = "No stations found. Try another sound or place.";
+    list.append(msg);
+  } else appendResults();
+}
+function appendResults() {
+  const page = results.slice(shown, shown + 60);
+  const fragment = document.createDocumentFragment();
+  for (const { s, i } of page) {
     const row = document.createElement("button");
     row.className = "row";
     row.dataset.index = i;
@@ -323,19 +389,25 @@ function drawList() {
       picker.close();
     };
     row.classList.toggle("active", i === index);
-    $("list").append(row);
-  });
-  const count = $("list").children.length;
-  $("count").textContent = count + " " + (count === 1 ? "station" : "stations");
-  if (!count) {
-    const msg = document.createElement("p");
-    msg.className = "empty";
-    msg.textContent = "No stations found. Try a city, country or genre.";
-    $("list").append(msg);
+    fragment.append(row);
   }
+  shown += page.length;
+  const list = $("list");
+  const more = list.querySelector(".more");
+  const restoreFocus = more && more === document.activeElement;
+  const first = fragment.firstElementChild;
+  more?.remove();
+  list.append(fragment);
+  if (shown < results.length) {
+    const button = document.createElement("button");
+    button.className = "more";
+    button.textContent = "Show more stations";
+    button.onclick = appendResults;
+    list.append(button);
+  }
+  if (restoreFocus) first?.focus();
 }
 $("search").oninput = drawList;
-family.onchange = drawList;
+country.onchange = family.onchange = drawList;
 display();
-drawList();
 setState("idle");

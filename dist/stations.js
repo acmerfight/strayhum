@@ -6,7 +6,7 @@ window.STATIONS = [
     urls: ['https://icecast.radiofrance.fr/fip-midfi.mp3', 'https://icecast.radiofrance.fr/fip-hifi.aac']
   },
   {
-    id: 'beijing', name: 'Beijing Music Radio', city: 'Beijing', country: 'China', genre: 'Mandopop & classics', family: 'Pop',
+    id: 'beijing', alias: '北京音乐广播', name: 'Beijing Music Radio', city: 'Beijing', country: 'China', genre: 'Mandopop & classics', family: 'Pop',
     lat: 39.90, lon: 116.41, zone: 'Asia/Shanghai', frequency: '97.4 FM',
     urls: ['https://lhttp.qtfm.cn/live/332/64k.mp3']
   },
@@ -89,5 +89,23 @@ window.STATIONS = [
     id: 'yes933', name: 'YES 933', city: 'Singapore', country: 'Singapore', genre: 'Mandopop hits', family: 'Pop',
     lat: 1.35, lon: 103.82, zone: 'Asia/Singapore', frequency: '93.3 FM',
     urls: ['https://playerservices.streamtheworld.com/api/livestream-redirect/YES933_PREM.aac']
-  }
+  },
+  {"id": "cn-274", "name": "Dynamic 101", "city": "Shanghai", "country": "China", "alias": "上海动感101", "genre": "Mandopop & chart hits", "family": "Pop", "lat": 31.23, "lon": 121.47, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qingting.fm/live/274/64k.mp3"]},
+  {"id": "cn-4963", "name": "Nanjing Music Radio", "city": "Nanjing", "country": "China", "alias": "南京音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 32.06, "lon": 118.8, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp-hw.qtfm.cn/live/4963/64k.mp3"]},
+  {"id": "cn-1739", "name": "Xiamen Music Radio", "city": "Xiamen", "country": "China", "alias": "厦门音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 24.48, "lon": 118.09, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1739/64k.mp3"]},
+  {"id": "cn-1110", "name": "Sichuan Music Radio", "city": "Chengdu", "country": "China", "alias": "四川音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 30.57, "lon": 104.07, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1110/64k.mp3"]},
+  {"id": "cn-1929", "name": "Yunnan Music Radio", "city": "Kunming", "country": "China", "alias": "云南音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 25.04, "lon": 102.71, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1929/64k.mp3"]},
+  {"id": "cn-1084", "name": "Dalian Music Radio", "city": "Dalian", "country": "China", "alias": "大连音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 38.91, "lon": 121.61, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qingting.fm/live/1084/64k.mp3"]},
+  {"id": "cn-1886", "name": "Inner Mongolia Music Radio", "city": "Hohhot", "country": "China", "alias": "内蒙古音乐之声", "genre": "Music variety", "family": "Eclectic", "lat": 40.84, "lon": 111.75, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp-hw.qtfm.cn/live/1886/64k.mp3"]},
+  {"id": "cn-1671", "name": "Jinan Music Radio", "city": "Jinan", "country": "China", "alias": "济南音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 36.65, "lon": 117.12, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1671/64k.mp3"]},
+  {"id": "cn-1149", "name": "Wenzhou Music Radio", "city": "Wenzhou", "country": "China", "alias": "温州音乐之声", "genre": "Chinese music & hits", "family": "Pop", "lat": 28, "lon": 120.7, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1149/64k.mp3"]},
+  {"id": "cn-1296", "name": "Hubei Classic Hits", "city": "Wuhan", "country": "China", "alias": "湖北经典音乐广播", "genre": "Classic hits", "family": "Oldies & decades", "lat": 30.59, "lon": 114.31, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1296/64k.mp3"]},
+  {"id": "cn-4979", "name": "Mango Music Radio", "city": "Changsha", "country": "China", "alias": "湖南音乐之声 芒果音乐台", "genre": "Mandopop & chart hits", "family": "Pop", "lat": 28.23, "lon": 112.94, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp-hw.qtfm.cn/live/4979/64k.mp3"]},
+  {"id": "cn-1683", "name": "Yantai Music Radio", "city": "Yantai", "country": "China", "alias": "烟台音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 37.46, "lon": 121.45, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1683/64k.mp3"]},
+  {"id": "cn-1612", "name": "Xi’an Music Radio", "city": "Xi’an", "country": "China", "alias": "西安音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 34.34, "lon": 108.94, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp-hw.qtfm.cn/live/1612/64k.mp3"]},
+  {"id": "cn-20067", "name": "Guizhou Music Radio", "city": "Guiyang", "country": "China", "alias": "贵州音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 26.65, "lon": 106.63, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/20067/64k.mp3"]},
+  {"id": "cn-1101", "name": "Liaoning Music Radio", "city": "Shenyang", "country": "China", "alias": "辽宁音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 41.81, "lon": 123.43, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/1101/64k.mp3?app"]},
+  {"id": "cn-4921", "name": "Zhengzhou Music Radio", "city": "Zhengzhou", "country": "China", "alias": "郑州音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 34.75, "lon": 113.62, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/4921/64k.mp3"]},
+  {"id": "cn-4969", "name": "Heilongjiang Music Radio", "city": "Harbin", "country": "China", "alias": "黑龙江音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 45.8, "lon": 126.53, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp.qtfm.cn/live/4969/64k.mp3"]},
+  {"id": "cn-20010", "name": "Haikou Music Radio", "city": "Haikou", "country": "China", "alias": "海口音乐广播", "genre": "Chinese music & hits", "family": "Pop", "lat": 20.04, "lon": 110.2, "zone": "Asia/Shanghai", "frequency": "WEB RADIO", "urls": ["https://lhttp-hw.qtfm.cn/live/20010/64k.mp3"]}
 ];

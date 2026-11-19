@@ -972,3 +972,56 @@ body:not([data-scene="listening"]) #credit {
   pointer-events: none;
   transform-origin: left center;
 }
+.library-filter {
+  flex-wrap: wrap;
+}
+.library-filter select {
+  max-width: 39%;
+  min-width: 0;
+  font-size: 13px;
+}
+.library-filter #count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#area,
+.more {
+  color: #f3d5a9;
+  font-size: 13px;
+  padding: 8px 14px;
+}
+#area {
+  margin: 0 0 3px 4px;
+}
+#area[hidden] {
+  display: none;
+}
+.more {
+  display: block;
+  margin: 4px auto;
+}
+.directory-note {
+  border-top: 1px solid #ffffff14;
+  padding: 9px 14px;
+  font-size: 11px;
+  color: #aaa8b4;
+}
+.directory-note a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+.row .sname {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .library-filter {
+    gap: 6px;
+  }
+  .library-filter select {
+    max-width: 37%;
+    font-size: 12px;
+  }
+  .library-filter #count {
+    font-size: 11px;
+  }
+}
