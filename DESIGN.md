@@ -2,29 +2,31 @@
 
 Stray Hum plays one small radio station at a time, from anywhere on earth. You listen; when you want somewhere else, you drift. It is not a directory: there is no search and no filter, because the point is the station you would not have chosen.
 
-## A window onto their sky
+## The view from the station
 
-The screen is one window, composed like a Sugimoto seascape: a horizon, the sky over the station right now above it, a sea below. There is no map.
+You stand on a rooftop on the edge of the station's town and look out. Everything in the view is real data for that place and this moment; nothing is drawn by hand for a city, so it works the same in Lagos, Kathmandu or a town of ten thousand.
 
-- **Their light, now.** The sun's height for someone standing at the station sets the whole palette, from deep night through the blue hour and dusk to a pale, airy day. The sun and the moon stand at their true height and bearing; the window faces the sun by day and turns to the moon at night if it is up. The moon is drawn in its real phase.
-- **Their weather.** Cloud, rain, snow and fog come from Open-Meteo for the station's coordinates and settle in slowly after arrival. At night, clouds are slate, faintly warm near the horizon, silver where the moon is up.
-- **The music lands on the sea.** The sun or the moon lays a path of light on the water; its glints quicken with loudness, and each attack sends a swell in from the horizon. The water nearest you, under the caption, is kept calm.
-- **Words.** Only the place is written: local time, city, the station, its sound, and "Clear · 14° · 9 hours ahead of you". Text in the sky turns to ink when the sky is bright.
+- **The land.** Elevation tiles (Mapzen terrain, AWS open data) in four rings, about 40 m apart near the eye and coarser out to the mountains a few hundred kilometres away, placed on the curve of the Earth so distant ranges sink behind the horizon as they really do. Lion's Head from Cape Town, the hills around the Kathmandu valley, the Andes behind Santiago's haze. The sea appears only where the sea is.
+- **Its colour.** NASA Blue Marble Next Generation for the current month, so snow lies where it lies this season; quietened a little toward grey.
+- **The sky.** The Preetham daylight model for the sun's true height and bearing, extended so twilight fades over the ten degrees after sunset into a blue hour; then night, with stars and the moon in its true phase. Distance fades the land into the sky behind it. Exposure adapts like an eye.
+- **The weather.** Cloud, rain, snow and fog from Open-Meteo, settling in after arrival.
+- **The lights.** At night, the towns' lights from NASA's Black Marble, drawn near the eye as single points a pixel or two across and further out as the glow the satellite saw.
+- **The music.** The lights breathe with loudness; each attack sends a ring out across the town and the water; glints on the sea quicken.
 
-Amber still means only "signal": On air, the Listen ring while playing, the wordmark's dot. Type is Bodoni Moda for names and Geist for everything else; the wordmark is roman, station names italic, both at small optical sizes so the hairlines hold on screens.
+Amber still means only "signal". Type is Bodoni Moda for names and Geist for everything else.
 
 ## Motion score
 
 | Moment | What happens | Why |
 | --- | --- | --- |
-| Arrival on the page | The window brightens from black into their sky. | You are looking out, somewhere. |
-| Drift | Static rises as the old station fades. The window travels the great circle, and the sky changes through the skies of every place on the way, crossing dusk or dawn when the route does. "Melbourne — Kathmandu" stands in the sky, the distance counting up, with the difference in hours. | Distance has a duration and a colour. |
-| Landing | The stream is held under the static until the window arrives, then crossfades in. Their weather settles in; the first sound comes in from the horizon as one long swell. | The sky and the music arrive together. |
-| Hold Drift | The world turns past the window like a dial, gathering speed; skies sweep through day and night. Each city passed comes up in the sky with its time, and a carrier tone sounds through the static. Letting go lands on the nearest station. | Chance you can steer by feel, as on a shortwave set. |
-| Listening | Glints and swells follow the music. | The station answers. |
-| A signal fades | "The signal faded · drifting on", then Stray Hum drifts by itself. | A dead stream becomes part of the radio, not an error. |
+| Arrival on the page | Black, then the place fades up once its land has loaded. | You open your eyes somewhere. |
+| Drift, near | The view rises into cloud and comes down over the next place. | A short hop. |
+| Drift, far | The view rises through cloud to orbit; the Earth turns below with its real terminator and city lights, an amber line drawing the route; then down through cloud into the next place. "Kathmandu — Lisbon", the distance counting up and the hours between stand in the sky. | You feel how far you have been taken. |
+| Landing | The stream is held under the static until the view has landed, then crossfades in. | The place and the music arrive together. |
+| Hold Drift | Straight up to orbit; the Earth turns below, gathering speed; each city passed comes up with its time, with a carrier tone through the static. Letting go descends to the station below. | Chance you can steer by feel. |
+| A signal fades | "The signal faded · drifting on", then Stray Hum drifts by itself. | A dead stream is part of the radio. |
 
-Reduced motion (the system setting or the Motion switch) removes the travel and the swells; listening is unchanged.
+Reduced motion (the system setting or the Motion switch) replaces travel with a fade.
 
 ## Sound
 
@@ -52,8 +54,11 @@ The share button opens the system share sheet on phones and copies a link elsewh
 4. Stations are placed on the most populous place within 30 km (Mitte belongs to Berlin), deduplicated by stream and by name, and capped per country, city and host.
 
 ```
-python3 -m venv .venv && .venv/bin/pip install geonamescache
+npm install --ignore-scripts                   # three.js and esbuild, pinned
+npm run build                                  # src/landscape.js -> dist/landscape.js
+python3 -m venv .venv && .venv/bin/pip install geonamescache numpy pillow
 .venv/bin/python scripts/build-stations.py     # stations: fetches and checks, cached in .cache/
+.venv/bin/python scripts/build-earth.py        # the Earth from orbit: day and night images from NASA
 ```
 
 Stream availability changes; rebuild the stations every few weeks.
@@ -62,13 +67,12 @@ Stream availability changes; rebuild the stations every few weeks.
 
 | File | Role |
 | --- | --- |
-| `dist/daylight.js` | The sun and moon for a place and moment, the sky's colours, time differences. |
+| `src/landscape.js` | The view, with three.js: land, sea, sky, lights, the Earth from orbit, and the journeys between. Built to `dist/landscape.js` with `npm run build`. |
+| `dist/daylight.js` | The sun and moon for a place and moment, time differences. |
 | `dist/weather.js` | The weather at a station, from Open-Meteo. |
-| `dist/sky.js` | WebGL2 renderer: sky, sun, moon, stars, cloud, rain, snow, fog, sea. |
-| `dist/outlook.js` | Where the window looks out: flights, the dial, swells, weather settling in. |
 | `dist/signal.js` | The receiver: playback, static, and onset detection for the swells. |
 | `dist/encounter.js` | Where to drift next, and what to remember (kept, tonight, faded). |
 | `dist/app.js` | Conducts the above; the caption, the deck, the log. |
 | `dist/nowplaying.js` | The song on air, from broadcaster playlists or stream-server status, cleaned. |
 
-Kept stations, tonight's route and faded signals stay in the browser's localStorage. Sources: stations from [Radio Browser](https://www.radio-browser.info/), places from [GeoNames](https://www.geonames.org/) (CC BY 4.0), weather from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0).
+Kept stations, tonight's route and faded signals stay in the browser's localStorage. Sources: stations from [Radio Browser](https://www.radio-browser.info/), places from [GeoNames](https://www.geonames.org/) (CC BY 4.0), weather from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), terrain from [Mapzen terrain tiles](https://registry.opendata.aws/terrain-tiles/) on AWS, the ground's colour, the city lights and the Earth from NASA (Blue Marble, Black Marble; public domain).

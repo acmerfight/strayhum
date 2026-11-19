@@ -18,16 +18,15 @@
     <link rel="icon" href="mark.svg" type="image/svg+xml" />
     <link rel="preload" href="fonts/bodoni-moda-italic-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="fonts/geist-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="style.css?v=sky-1" />
-    <script defer src="stations.js?v=sky-1"></script>
-    <script defer src="daylight.js?v=sky-1"></script>
-    <script defer src="weather.js?v=sky-1"></script>
-    <script defer src="sky.js?v=sky-1"></script>
-    <script defer src="outlook.js?v=sky-1"></script>
-    <script defer src="signal.js?v=sky-1"></script>
-    <script defer src="encounter.js?v=sky-1"></script>
-    <script defer src="nowplaying.js?v=sky-1"></script>
-    <script defer src="app.js?v=sky-1"></script>
+    <link rel="stylesheet" href="style.css?v=land-1" />
+    <script defer src="stations.js?v=land-1"></script>
+    <script defer src="daylight.js?v=land-1"></script>
+    <script defer src="weather.js?v=land-1"></script>
+    <script defer src="signal.js?v=land-1"></script>
+    <script defer src="encounter.js?v=land-1"></script>
+    <script defer src="nowplaying.js?v=land-1"></script>
+    <script type="module" src="landscape.js?v=land-1"></script>
+    <script defer src="app.js?v=land-1"></script>
   </head>
   <body data-state="idle">
     <canvas id="sky" aria-hidden="true"></canvas>
@@ -104,13 +103,15 @@
       <p class="keys">Space listen or pause · D drift, hold D to turn the dial · K keep</p>
       <p class="about">
         Each station is small or independent, and was checked to be on air when this list was made. Some will have
-        faded since; Stray Hum drifts on when that happens. The sky is the sky over the station now: the sun where it
-        stands for them, and their weather.
+        faded since; Stray Hum drifts on when that happens. What you see is the land around the station under its sky
+        now: the sun and moon where they stand for them, their weather, and at night their lights.
       </p>
       <p class="credits">
         Stations from <a href="https://www.radio-browser.info/" target="_blank" rel="noreferrer">Radio Browser</a> ·
         places from <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · weather from
-        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · terrain from
+        <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Mapzen terrain tiles</a> · the Earth and its lights from
+        <a href="https://earthobservatory.nasa.gov/" target="_blank" rel="noreferrer">NASA</a>
       </p>
     </dialog>
   </body>

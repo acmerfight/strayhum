@@ -1,0 +1,12 @@
+{
+  "name": "strayhum",
+  "private": true,
+  "description": "Stray Hum: chance encounters with music from all over the world.",
+  "scripts": {
+    "build": "esbuild src/landscape.js --bundle --minify --format=esm --target=es2022 --outfile=dist/landscape.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.187.0"
+  }
+}

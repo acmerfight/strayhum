@@ -1,7 +1,7 @@
-/* Stray Hum: one small station at a time, from anywhere on earth, seen through a window onto its
-   sky. Listen; when you want somewhere else, drift. This file conducts: it starts tuning, flies
-   the window there through the skies on the way, holds the sound until it lands, and remembers
-   the night. */
+/* Stray Hum: one small station at a time, from anywhere on earth, seen from where it is. Listen;
+   when you want somewhere else, drift. This file conducts: it starts tuning, carries the view
+   there (over the Earth if it is far), holds the sound until it lands, and remembers the night.
+   The view itself is landscape.js. */
 const $ = (id) => document.getElementById(id);
 // A few servers send Safari to a plain-http address it cannot play; Safari never meets those stations.
 const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
@@ -52,26 +52,20 @@ function go(i) {
   credit.clear();
   const t = ++token;
   const from = current;
-  const landing = outlook.fly(i);
+  const { estimate, landed } = outlook.fly(i);
   current = i;
-  setVoyage(from, i, landing);
+  setVoyage(from, i, estimate);
   if (onPlate !== i) {
     leavePlate();
     // Filled by station rather than by tuning, so a pause mid-flight still leaves a caption.
-    setTimeout(() => current === i && onPlate !== i && fillPlate(i, true), Math.max(0, (landing - performance.now()) * 0.55));
+    setTimeout(() => current === i && onPlate !== i && fillPlate(i, true), Math.max(0, (estimate - performance.now()) * 0.7));
   }
-  // The weather is asked for at once, and settles in when the window lands.
-  weatherAt(stations[i]).then((w) => {
-    if (current !== i) return;
-    setTimeout(() => current === i && settleWeather(i, w), Math.max(0, landing - performance.now()));
-  });
+  // The weather is asked for at once, and settles in when the view lands.
+  weatherAt(stations[i]).then((w) => landed.then(() => current === i && settleWeather(i, w)));
   setState('tuning');
   history.replaceState(null, '', '?station=' + encodeURIComponent(stations[i].id));
   receiver.tune(stations[i], {
-    onAir: () => {
-      if (t !== token) return;
-      setTimeout(() => t === token && arrive(i), Math.max(0, landing - performance.now()));
-    },
+    onAir: () => t === token && landed.then(() => t === token && arrive(i)),
     onFade: () => t === token && fade(i),
   });
 }
@@ -490,7 +484,7 @@ setInterval(() => {
   refreshMemory();
   fillPlate(current, false);
   const first = current;
-  weatherAt(s).then((w) => current === first && !outlook.flight && settleWeather(first, w));
+  weatherAt(s).then((w) => current === first && settleWeather(first, w));
   if (sent) $('eyebrow').textContent = 'Someone sent you this';
   setState('idle');
   // A still for link previews: no controls, the name set over the sea.
