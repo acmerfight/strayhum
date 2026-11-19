@@ -18,15 +18,15 @@
     <link rel="icon" href="mark.svg" type="image/svg+xml" />
     <link rel="preload" href="fonts/bodoni-moda-italic-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="fonts/geist-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="style.css?v=land-1" />
-    <script defer src="stations.js?v=land-1"></script>
-    <script defer src="daylight.js?v=land-1"></script>
-    <script defer src="weather.js?v=land-1"></script>
-    <script defer src="signal.js?v=land-1"></script>
-    <script defer src="encounter.js?v=land-1"></script>
-    <script defer src="nowplaying.js?v=land-1"></script>
-    <script type="module" src="landscape.js?v=land-1"></script>
-    <script defer src="app.js?v=land-1"></script>
+    <link rel="stylesheet" href="style.css?v=earth-2" />
+    <script defer src="stations.js?v=earth-2"></script>
+    <script defer src="daylight.js?v=earth-2"></script>
+    <script defer src="weather.js?v=earth-2"></script>
+    <script defer src="signal.js?v=earth-2"></script>
+    <script defer src="encounter.js?v=earth-2"></script>
+    <script defer src="nowplaying.js?v=earth-2"></script>
+    <script type="module" src="earth.js?v=earth-2"></script>
+    <script defer src="app.js?v=earth-2"></script>
   </head>
   <body data-state="idle">
     <canvas id="sky" aria-hidden="true"></canvas>
@@ -54,10 +54,6 @@
       </a>
       <p class="tagline">chance encounters with music from all over the world</p>
       <div class="tools">
-      <button id="earth" class="quiet" type="button" aria-pressed="false" aria-keyshortcuts="E" title="Turn the Earth and find stations yourself">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" /><path d="M3.8 12h16.4M12 3.8c2.4 2.3 3.6 5 3.6 8.2s-1.2 5.9-3.6 8.2c-2.4-2.3-3.6-5-3.6-8.2s1.2-5.9 3.6-8.2Z" /></svg>
-        <span id="earth-label">Earth</span>
-      </button>
       <button id="log-open" class="quiet" type="button" aria-haspopup="dialog">
         <span>Kept</span><span id="kept-count" class="count"></span>
       </button>
@@ -112,18 +108,18 @@
       <h2 class="section">Settings</h2>
       <label class="toggle"><input id="static-toggle" type="checkbox" /><span>Static between stations</span></label>
       <label class="toggle"><input id="motion-toggle" type="checkbox" /><span>Motion</span></label>
-      <p class="keys">Space listen or pause · D drift, hold D to turn the dial · E the Earth · K keep</p>
+      <p class="keys">Space listen or pause · D drift, hold D to let the Earth turn · K keep · drag to turn the Earth yourself</p>
       <p class="about">
         Each station is small or independent, and was checked to be on air when this list was made. Some will have
-        faded since; Stray Hum drifts on when that happens. What you see is the land around the station under its sky
-        now: the sun and moon where they stand for them, their weather, and at night their lights.
+        faded since; Stray Hum drifts on when that happens. The Earth is lit as it is now: the sun where it stands, the
+        night side in its own lights, and a recent day's clouds.
       </p>
       <p class="credits">
         Stations from <a href="https://www.radio-browser.info/" target="_blank" rel="noreferrer">Radio Browser</a> ·
         places from <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · weather from
-        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · terrain from
-        <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Mapzen terrain tiles</a> · the Earth and its lights from
-        <a href="https://earthobservatory.nasa.gov/" target="_blank" rel="noreferrer">NASA</a>
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · relief from
+        <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Mapzen terrain tiles</a> · the Earth, its lights and
+        clouds from <a href="https://earthobservatory.nasa.gov/" target="_blank" rel="noreferrer">NASA</a>
       </p>
     </dialog>
   </body>

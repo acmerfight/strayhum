@@ -1,7 +1,7 @@
-/* Stray Hum: one small station at a time, from anywhere on earth, seen from where it is. Listen;
-   when you want somewhere else, drift. This file conducts: it starts tuning, carries the view
-   there (over the Earth if it is far), holds the sound until it lands, and remembers the night.
-   The view itself is landscape.js. */
+/* Stray Hum: one small station at a time, from anywhere on earth. Listen; when you want somewhere
+   else, drift, and the Earth turns to it; or turn the Earth yourself. This file conducts: it
+   starts tuning, turns the Earth, holds the sound until the station faces you, and remembers the
+   night. The Earth itself is earth.js. */
 const $ = (id) => document.getElementById(id);
 // A few servers send Safari to a plain-http address it cannot play; Safari never meets those stations.
 const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
@@ -41,7 +41,7 @@ outlook.onPick = (i, touch) => {
   if (touch && finder.i !== i) showFinder(i, true);
   else go(i);
 };
-outlook.onWantEarth = () => openEarth();
+
 
 function setState(next) {
   state = next;
@@ -49,12 +49,14 @@ function setState(next) {
   $('status').textContent = statusText[next];
   const running = next === 'onair' || next === 'tuning' || next === 'wandering';
   $('play').setAttribute('aria-label', running ? 'Pause' : 'Listen');
+  // While something plays, the Earth turns back to it when left alone.
+  outlook.playing = running;
 }
 
 /** Tunes to a station: the window travels there while the static plays, and the sound is let
     through only when it lands, so the sky and the music arrive together. */
 function go(i) {
-  leaveEarthView();
+  showFinder(null);
   receiver.start();
   clearTimeout(driftTimer);
   credit.clear();
@@ -245,32 +247,6 @@ function enterPlate() {
 
 const finder = { i: null, touch: false };
 
-function openEarth() {
-  if (outlook.exploring || !outlook.ok) return;
-  outlook.explore();
-  document.body.dataset.view = 'earth';
-  $('earth').setAttribute('aria-pressed', 'true');
-  $('earth-label').textContent = `Back to ${stations[current].city}`;
-  hint.after('earth');
-}
-
-/** Back down to the station that is playing; the music never stopped. */
-function closeEarth() {
-  if (!outlook.exploring) return;
-  leaveEarthView();
-  const i = current;
-  const { estimate, landed } = outlook.returnTo(i);
-  setVoyage(i, i, estimate);
-  landed.then(() => weatherAt(stations[i]).then((w) => current === i && settleWeather(i, w)));
-}
-
-function leaveEarthView() {
-  delete document.body.dataset.view;
-  $('earth').setAttribute('aria-pressed', 'false');
-  $('earth-label').textContent = 'Earth';
-  showFinder(null);
-}
-
 function showFinder(i, touch) {
   finder.i = i;
   finder.touch = touch;
@@ -301,7 +277,6 @@ function placeFinder() {
 }
 
 $('finder').querySelector('.go').addEventListener('click', () => finder.i !== null && go(finder.i));
-$('earth').onclick = () => (outlook.exploring ? closeEarth() : openEarth());
 
 /* In the sky: the voyage, and the cities the dial passes ---------------------------- */
 
@@ -423,13 +398,9 @@ const hint = {
       localStorage.setItem('strayhum.dial', '1');
       this.hide();
     }
-    if (moment === 'earth' && !this.earth) {
-      this.earth = true;
-      this.show('Turn the Earth. Every light is a station; select one to listen.', 7000);
-    }
     if (moment === 'arrive' && this.seen && !this.dial) this.show('Hold Drift to turn the world past the window.', 7000);
     if (this.seen) return;
-    if (moment === 'arrive') this.show('This is their sky, right now. Drift when you want somewhere else.', 8000);
+    if (moment === 'arrive') this.show('Every light is a station. Turn the Earth, or drift.', 8000);
     if (moment === 'drift') {
       this.seen = true;
       localStorage.setItem('strayhum.seen', '1');
@@ -499,10 +470,8 @@ addEventListener('keydown', (e) => {
     drift();
   } else if (e.key === 'k' || e.key === 'K') {
     keep();
-  } else if (e.key === 'e' || e.key === 'E') {
-    outlook.exploring ? closeEarth() : openEarth();
-  } else if (e.key === 'Escape' && outlook.exploring) {
-    closeEarth();
+  } else if (e.key === 'Escape') {
+    showFinder(null);
   }
 });
 addEventListener('keyup', (e) => {

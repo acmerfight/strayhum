@@ -2,34 +2,31 @@
 
 Stray Hum plays one small radio station at a time, from anywhere on earth. You listen; when you want somewhere else, you drift. It is not a directory: there is no search and no filter, because the point is the station you would not have chosen.
 
-## The view from the station
+## The Earth, as it is now
 
-You stand on a rooftop on the edge of the station's town and look out. Everything in the view is real data for that place and this moment; nothing is drawn by hand for a city, so it works the same in Lagos, Kathmandu or a town of ten thousand.
+The whole screen is the Earth in space, set right of centre with the caption beside it. Everything on it is real:
 
-- **The land.** Elevation tiles (Mapzen terrain, AWS open data) in four rings, about 40 m apart near the eye and coarser out to the mountains a few hundred kilometres away, placed on the curve of the Earth so distant ranges sink behind the horizon as they really do. Lion's Head from Cape Town, the hills around the Kathmandu valley, the Andes behind Santiago's haze. The sea appears only where the sea is.
-- **Its colour.** NASA Blue Marble Next Generation for the current month, so snow lies where it lies this season; quietened a little toward grey.
-- **The sky.** The Preetham daylight model for the sun's true height and bearing, extended so twilight fades over the ten degrees after sunset into a blue hour; then night, with stars and the moon in its true phase. Distance fades the land into the sky behind it. Exposure adapts like an eye.
-- **The weather.** Cloud, rain, snow and fog from Open-Meteo, settling in after arrival.
-- **The lights.** At night, the towns' lights from NASA's Black Marble, drawn near the eye as single points a pixel or two across and further out as the glow the satellite saw.
-- **The music.** The lights breathe with loudness; each attack sends a ring out across the town and the water; glints on the sea quicken.
+- **The sun where it is.** Day and night fall where they fall at this moment; the terminator is narrow, with sunlight reddening just before it, and the air at the edge of the Earth turns from blue to red where the sun is setting.
+- **The ground and its relief.** NASA Blue Marble Next Generation for colour; the world's elevation (Mapzen terrain) as a normal map, so mountain ranges stand out in low sun.
+- **The sea** dark, with the sun's glint broken by the swell, and the sky's light at grazing angles.
+- **Real clouds.** One recent day's clouds from NASA's VIIRS and MODIS satellites, kept only where two satellites agree, with their shadows on the ground.
+- **The night side** in its own lights (NASA Black Marble), dimmed under cloud, with a trace of earthshine so the whole ball reads; a thin line of airglow along its edge.
+- **The sun** itself when it is in view, and its light coming round the edge of the Earth.
+- **Stations** as small bone-white points, a little brighter on the night side. The one playing is amber and breathes; kept ones are amber. Each beat of the music leaves the station as a fine amber ring across the face of the Earth.
 
-Amber still means only "signal". Type is Bodoni Moda for names and Geist for everything else.
-
-**Development.** Everything is rendered in linear light and developed like a print: ACES, a palette that draws cool colour toward grey and keeps warm light (sunsets, lamps) in full colour, split toning, lifted blacks, halation around bright light, grain and a vignette. One grade for every place and time of day, so the work reads as one series of photographs.
+**Development.** Rendered in linear light, then printed: ACES, cool colour held back while warm light keeps its colour, split toning, lifted blacks, halation in two widths, a trace of lens fringing toward the edges, grain, vignette.
 
 ## Motion score
 
 | Moment | What happens | Why |
 | --- | --- | --- |
-| Arrival on the page | Black, then the place fades up once its land has loaded. | You open your eyes somewhere. |
-| Opening | The Earth, whole, turns to the first station; the view comes in and down through cloud. | The product in one shot: somewhere on this Earth, now. |
-| Drift | The view rises through cloud until the Earth is a ball. The camera stays still and the Earth itself turns, with its real terminator and city lights, an amber line drawing the route from where you were; the destination comes round to face you, and the view goes in and down. "Seattle — Lisbon", the distance counting up and the hours between stand in the sky. | You see the Earth turn, and how far you have been taken. |
-| The Earth by hand | The Earth button (E), or pulling back with the wheel or a pinch, lifts the view off to the Earth while the music plays on. Drag to turn it, with inertia; scroll or pinch to come closer. Every station is a small bone-white light; the one playing is amber and breathes; kept ones are amber. Hovering a light names its city, time, station and sound; selecting it goes there. On touch a first tap names it and offers Listen. Back to the city, or Esc, comes down again. | Chance first; the whole map when you want it. |
-| Landing | The stream is held under the static until the view has landed, then crossfades in. | The place and the music arrive together. |
-| Hold Drift | Straight up to orbit; the Earth turns below, gathering speed; each city passed comes up with its time, with a carrier tone through the static. Letting go descends to the station below. | Chance you can steer by feel. |
+| Opening | From far off, the Earth turns a quarter of the way round to the first station and comes closer. | Somewhere on this Earth, now. |
+| Drift | The Earth itself turns to the next station along the great circle, the camera easing back a little for long journeys and in again; an amber arc draws the way from where you were. "Seattle — Kathmandu", the distance counting up and the hours between stand above the Earth. The sound is let through as the station comes to face you. | You see the Earth turn and how far you were taken. |
+| Hold Drift | The Earth turns by itself along a heading chosen by chance, gathering speed, an amber ring at the centre of its face; each city passed comes up with its time, with a carrier tone through the static. Letting go settles on the station under the ring. | Chance you can steer by feel. |
+| By hand | Drag to turn the Earth, with inertia; scroll or pinch to come closer, down to the lights of single towns. Hovering a light names its city, time, station and sound; selecting it listens. On touch a first tap names it and offers Listen. Left alone while something plays, the Earth turns back to it. | The whole map when you want it, chance when you do not. |
 | A signal fades | "The signal faded · drifting on", then Stray Hum drifts by itself. | A dead stream is part of the radio. |
 
-Reduced motion (the system setting or the Motion switch) replaces travel with a fade.
+Reduced motion (the system setting or the Motion switch) turns the Earth instantly.
 
 ## Sound
 
@@ -58,10 +55,10 @@ The share button opens the system share sheet on phones and copies a link elsewh
 
 ```
 npm install --ignore-scripts                   # three.js and esbuild, pinned
-npm run build                                  # src/landscape.js -> dist/landscape.js
+npm run build                                  # src/earth.js -> dist/earth.js
 python3 -m venv .venv && .venv/bin/pip install geonamescache numpy pillow
 .venv/bin/python scripts/build-stations.py     # stations: fetches and checks, cached in .cache/
-.venv/bin/python scripts/build-earth.py        # the Earth from orbit: day and night images from NASA
+.venv/bin/python scripts/build-earth.py        # dist/earth/: ground, relief, lights, a day's clouds; rerun to refresh the clouds
 ```
 
 Stream availability changes; rebuild the stations every few weeks.
@@ -70,7 +67,7 @@ Stream availability changes; rebuild the stations every few weeks.
 
 | File | Role |
 | --- | --- |
-| `src/landscape.js` | The view, with three.js: land, sea, sky, lights, the Earth from orbit, and the journeys between. Built to `dist/landscape.js` with `npm run build`. |
+| `src/earth.js` | The Earth with three.js: ground, relief, sea, clouds, lights, air, stations, journeys, turning by hand, and the print. Built to `dist/earth.js` with `npm run build`. |
 | `dist/daylight.js` | The sun and moon for a place and moment, time differences. |
 | `dist/weather.js` | The weather at a station, from Open-Meteo. |
 | `dist/signal.js` | The receiver: playback, static, and onset detection for the swells. |
@@ -78,4 +75,4 @@ Stream availability changes; rebuild the stations every few weeks.
 | `dist/app.js` | Conducts the above; the caption, the deck, the log. |
 | `dist/nowplaying.js` | The song on air, from broadcaster playlists or stream-server status, cleaned. |
 
-Kept stations, tonight's route and faded signals stay in the browser's localStorage. Sources: stations from [Radio Browser](https://www.radio-browser.info/), places from [GeoNames](https://www.geonames.org/) (CC BY 4.0), weather from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), terrain from [Mapzen terrain tiles](https://registry.opendata.aws/terrain-tiles/) on AWS, the ground's colour, the city lights and the Earth from NASA (Blue Marble, Black Marble; public domain).
+Kept stations, tonight's route and faded signals stay in the browser's localStorage. Sources: stations from [Radio Browser](https://www.radio-browser.info/), places from [GeoNames](https://www.geonames.org/) (CC BY 4.0), weather from [Open-Meteo](https://open-meteo.com/) (CC BY 4.0), relief from [Mapzen terrain tiles](https://registry.opendata.aws/terrain-tiles/) on AWS, the ground's colour, the city lights and the clouds from NASA (Blue Marble, Black Marble, VIIRS and MODIS; public domain).

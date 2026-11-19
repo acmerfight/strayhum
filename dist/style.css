@@ -256,10 +256,6 @@ body[data-state='onair'] .wordmark .dot {
   stroke-width: 1.2;
 }
 
-#earth[aria-pressed='true'] {
-  color: var(--amber);
-}
-
 /* The light under your pointer on the Earth: its city in map capitals, the station in italic. */
 .finder {
   position: fixed;
@@ -329,11 +325,7 @@ body[data-state='onair'] .wordmark .dot {
   display: block;
 }
 
-/* While you turn the Earth, the caption steps back: what is playing stays, the rest waits. */
-body[data-view='earth'] .eyebrow,
-body[data-view='earth'] .conditions {
-  opacity: 0;
-}
+
 
 .count {
   min-width: 1ch;
@@ -715,7 +707,8 @@ body[data-state='tuning'] .status::before {
   position: fixed;
   left: 0;
   right: 0;
-  top: calc(var(--horizon) * 0.44);
+  /* Above the Earth, in the dark of space. */
+  top: max(92px, 9vh);
   z-index: 1;
   display: grid;
   justify-items: center;
@@ -1039,7 +1032,7 @@ body[data-state='tuning'] .status::before {
     gap: 18px;
   }
 
-  .quiet {
+  .tools {
     grid-column: 3;
   }
 
