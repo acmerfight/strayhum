@@ -172,7 +172,7 @@ function showIdentity(listening, stationChanged = false) {
   document.body.dataset.scene = mode;
   head.textContent = listening ? s.name : s.city;
   sub.textContent = listening ? s.city : s.name;
-  head.classList.toggle("long", head.textContent.length > (listening ? 14 : 9));
+  head.classList.toggle("long", head.textContent.length > (listening ? 14 : 6));
   head.classList.toggle(
     "medium",
     listening && head.textContent.length >= 8 && head.textContent.length <= 14,

@@ -1025,3 +1025,7 @@ body:not([data-scene="listening"]) #credit {
     font-size: 11px;
   }
 }
+
+#picker {
+  width: min(560px, calc(100vw - 28px));
+}
