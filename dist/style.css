@@ -1,4 +1,4 @@
-/* strayhum. One ink, one bone white for the engraving, one amber for the signal. */
+/* Stray Hum. One ink, one bone white for the engraving, one amber for the signal. */
 
 /* Bodoni Moda and Geist, SIL Open Font License 1.1: see fonts/OFL-*.txt */
 /* Bodoni Moda italic, latin-ext */
@@ -182,8 +182,10 @@ body::before {
   gap: 11px;
   color: var(--bone);
   text-decoration: none;
-  font: italic 400 27px/1 var(--serif);
-  letter-spacing: -0.01em;
+  /* Roman, at a small optical size: the title of an atlas plate, and its hairlines hold at this size. */
+  font: 400 25px/1 var(--serif);
+  font-variation-settings: 'opsz' 11;
+  letter-spacing: 0.005em;
 }
 
 .wordmark svg {
@@ -287,6 +289,8 @@ body:not([data-state='idle']) .eyebrow {
 #name {
   margin: 0.2em 0 0.22em;
   font: italic 400 var(--name-size, clamp(52px, 5.8vw, 100px)) / 0.98 var(--serif);
+  /* The display cut's hairlines vanish on screens; a middle optical size keeps crossbars visible. */
+  font-variation-settings: 'opsz' 16;
   letter-spacing: -0.015em;
   text-wrap: balance;
   overflow-wrap: anywhere;
@@ -294,7 +298,8 @@ body:not([data-state='idle']) .eyebrow {
 }
 
 body[data-state='tuning'] #name,
-body[data-state='faded'] #name {
+body[data-state='faded'] #name,
+body[data-state='wandering'] #name {
   opacity: 0.5;
 }
 
@@ -306,25 +311,51 @@ body[data-state='faded'] #name {
 }
 
 .credit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 14px 0 0;
-  color: var(--bone-80);
+  position: relative;
+  display: grid;
+  gap: 5px;
+  margin: 16px 0 0;
+  padding-left: 15px;
+  color: var(--bone-60);
   font-size: 13.5px;
+  pointer-events: auto;
 }
 
 .credit[hidden] {
   display: none;
 }
 
+/* A small amber point: this is what is playing, now. */
 .credit::before {
   content: '';
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0.62em;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--amber);
+}
+
+.credit .title {
+  color: var(--bone);
+}
+
+.credit .find {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+.credit .find a {
+  color: var(--bone-45);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.credit .find a:hover {
+  color: var(--amber);
 }
 
 /* Deck: listen, keep, drift ---------------------------------------------- */
@@ -388,11 +419,11 @@ body[data-state='faded'] #name {
   display: none;
 }
 
-body:is([data-state='onair'], [data-state='tuning']) #play .icon-play {
+body:is([data-state='onair'], [data-state='tuning'], [data-state='wandering']) #play .icon-play {
   display: none;
 }
 
-body:is([data-state='onair'], [data-state='tuning']) #play .icon-pause {
+body:is([data-state='onair'], [data-state='tuning'], [data-state='wandering']) #play .icon-pause {
   display: block;
 }
 
@@ -429,6 +460,18 @@ body[data-state='idle'] #play .breath {
     opacity: 0;
     transform: scale(1.5);
   }
+}
+
+/* Holding Drift: the button and the needle share the signal colour. */
+body[data-state='wandering'] #drift {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.deck button {
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 #keep[aria-pressed='true'] {
@@ -617,6 +660,7 @@ body[data-state='tuning'] .status::before {
 .near .station {
   margin-top: 4px;
   font: italic 400 18px/1.1 var(--serif);
+  font-variation-settings: 'opsz' 10;
 }
 
 .near .go {
@@ -677,6 +721,7 @@ body[data-state='tuning'] .status::before {
 #log h2 {
   margin: 0;
   font: italic 400 34px/1 var(--serif);
+  font-variation-settings: 'opsz' 18;
 }
 
 #log h2.section {
@@ -714,6 +759,17 @@ body[data-state='tuning'] .status::before {
 
 .stations .open strong {
   font: italic 400 22px/1.1 var(--serif);
+  font-variation-settings: 'opsz' 12;
+}
+
+.stations .open em {
+  color: var(--bone-60);
+  font: italic 400 14px/1.3 var(--serif);
+  font-variation-settings: 'opsz' 8;
+}
+
+.stations .open em:empty {
+  display: none;
 }
 
 .stations .open span {
@@ -892,7 +948,7 @@ body[data-state='tuning'] .status::before {
     left: var(--edge);
     right: var(--edge);
     justify-content: center;
-    gap: 22px;
+    gap: 14px;
   }
 
   .volume {
@@ -974,6 +1030,42 @@ body[data-state='tuning'] .status::before {
   .hint {
     display: none;
   }
+}
+
+/* The link-preview still: the globe set like a print, the name beside it. */
+body.poster :is(.deck, .plate, .hint, .mark-label, #log-open, .tagline) {
+  display: none;
+}
+
+body.poster .top {
+  top: auto;
+  bottom: 64px;
+  left: 72px;
+  display: block;
+}
+
+body.poster .wordmark {
+  font-size: 62px;
+  font-variation-settings: 'opsz' 20;
+  gap: 20px;
+}
+
+body.poster .wordmark svg {
+  width: 44px;
+  height: 44px;
+}
+
+body.poster .top::after {
+  content: 'chance encounters with music from all over the world';
+  display: block;
+  margin: 18px 0 0 64px;
+  color: var(--bone-60);
+  font-size: 19px;
+  letter-spacing: 0.02em;
+}
+
+body.poster::before {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

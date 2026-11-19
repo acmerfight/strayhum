@@ -30,7 +30,7 @@ API = 'https://de1.api.radio-browser.info/json'
 CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 # Some Icecast servers redirect Safari to a plain-http URL, which a secure page cannot play.
 SAFARI = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
-ORIGIN = 'https://strayhum.example'
+ORIGIN = 'https://strayhum.com'
 OFFLINE = '--offline' in sys.argv
 
 # Stations a listener would be glad to stumble on. Matched by name in Radio Browser,
@@ -97,8 +97,10 @@ NICHE = {
 MAINSTREAM = (r'top ?40|top hits|hits|charts?|contemporary hits|chr|adult contemporary|classic hits|hot ac|'
               r'entretenimiento|variety|juvenil|grupera|grupero|banda|norteño|regional mexican|reggaeton|schlager|'
               r'80s|90s|2000s|oldies|retro|classic rock')
-EXCLUDE = (r'news|noticias|talk|sports?|deportes|christian|catholic|islam|quran|sermon|preaching|bible|church|'
-           r'evangel|religio|gospel|worship|christmas|xmas|navidad|weihnacht|scanner|police|traffic|podcast|politic')
+RELIGIOUS = (r'christian|catholic|orthodox|islam|quran|coran|sonnah|sunnah|sermon|preaching|bible|church|evangel|religio|'
+             r'gospel|worship|christmas|xmas|navidad|weihnacht')
+SPOKEN = r'news|noticias|talk|sports?|deportes|football|soccer|scanner|police|traffic|podcast|politic|education'
+EXCLUDE = RELIGIOUS + '|' + SPOKEN
 NAME_EXCLUDE = (r'^\W|nicht einschalten|christmas|xmas|navidad|weihnacht|top ?\d+|hits?\b|\bhit\b|хит|хіт|100%|'
                 r'\btest\b|^radio$|kiss|energy|nrj|bigfm|big fm|i ?love ?radio|rautemusik|0nline|laut\.fm|'
                 r'bob!?$|antenne|regenbogen|rpr1|radio saw|iheart|cumulus|los 40|40 principales|evropa 2')
@@ -111,6 +113,8 @@ SHARED_HOSTS = ('stream.zeno.fm', 'streaming.live365.com', 'listen.radioking.com
 
 GENRES = {
     'Afrobeat': r'afrobeat|afropop|afro pop', 'Highlife': r'highlife|hiplife', 'Amapiano': 'amapiano',
+    'Ethiopian music': r'ethio|amharic music|tizita', 'Taarab': 'taarab|bongo flava', 'Soukous': r'soukous|rumba congo|ndombolo',
+    'Mbalax': 'mbalax', 'Coupé-décalé': r'coupe.decale|zouglou', 'Kwaito': r'kwaito|gqom', 'African music': r'african|afrika|afro\b',
     'Samba': 'samba|pagode', 'Bossa nova': 'bossa nova', 'MPB': r'\bmpb\b|musica brasileira', 'Forró': r'forro',
     'Cumbia': 'cumbia', 'Tango': 'tango', 'Salsa': 'salsa', 'Son': r'son cubano|\bson\b', 'Bolero': 'bolero',
     'Fado': 'fado', 'Flamenco': 'flamenco', 'Chanson': 'chanson', 'Rebetiko': 'rebetiko|rembetiko',
@@ -132,6 +136,27 @@ GENRES = {
 }
 GENRE_RULES = [(label, re.compile(r'(?<!\w)(?:' + pattern + r')', re.I)) for label, pattern in GENRES.items()]
 COMPOSITE = {'Jazz': 'Free jazz', 'Classical': 'Contemporary classical'}
+# Drifting chooses a region of the world before a station, so encounters reach everywhere,
+# not only where the directory is dense.
+WEST_ASIA = {'TR', 'IL', 'PS', 'LB', 'JO', 'SY', 'IQ', 'IR', 'SA', 'AE', 'QA', 'KW', 'BH', 'OM', 'YE', 'GE', 'AM', 'AZ', 'CY',
+             'KZ', 'KG', 'UZ', 'TJ', 'TM', 'AF'}
+SOUTH_ASIA = {'IN', 'PK', 'BD', 'NP', 'LK', 'BT', 'MV'}
+
+
+def region(cc, continent):
+    if continent == 'EU':
+        return 'Europe'
+    if cc in ('US', 'CA', 'GL', 'PM', 'BM'):
+        return 'North America'
+    if continent in ('NA', 'SA'):
+        return 'Latin America'
+    if continent == 'AF':
+        return 'Africa'
+    if continent == 'OC':
+        return 'Oceania'
+    return 'West Asia' if cc in WEST_ASIA else 'South Asia' if cc in SOUTH_ASIA else 'East Asia'
+
+
 COUNTRY_ALIASES = {('US', 'United States'), ('GB', 'United Kingdom'), ('KR', 'South Korea'), ('RU', 'Russia')}
 
 
@@ -163,6 +188,10 @@ def niche_score(tags, name):
 
 def clean_name(raw):
     name = ' '.join(raw.split())
+    # Emoji and decorations, and bracketed country codes like ( AR ), are not part of a name.
+    name = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]', '', name)
+    name = re.sub(r'\s*[\(\[]\s*[A-Z]{2,3}\s*[\)\]]', '', name)
+    name = ' '.join(name.split())
     name = re.sub(r'\s*(hi-?fi\s*)?(flac\s*)?[\(\[]?\b\d{2,4}\s?k(bps)?\b[^\)\]]*[\)\]]?', '', name, flags=re.I)
     name = re.sub(r'\s*[\(\[](mp3|aac\+?|ogg|opus|flac|hq|hd|lq|low|high|stereo|web|live)[\)\]]', '', name, flags=re.I)
     name = re.sub(r'\s*[|/–-]\s*(livestream|live stream|stream|webradio|web radio|online|listen live)$', '', name, flags=re.I)
@@ -300,19 +329,31 @@ def main():
             continue
         tags = norm(r['tags'] + ' ')
         name = clean_name(r['name'])
-        if len(name) < 3 or not re.search(r'[^\W\d_]{2}', name) or len(name) > 40 or re.search(EXCLUDE, tags) or re.search(NAME_EXCLUDE, norm(r['name'])):
+        if len(name) < 3 or not re.search(r'[^\W\d_]{2}', name) or len(name) > 40 or re.search(NAME_EXCLUDE, norm(r['name'])):
             continue
         genres = label_genres(tags + ' ' + norm(r['name']))
+        # Outside Europe and North America a station that mixes news and music is still an encounter,
+        # and one without genre tags is described by its language.
+        regional = countries[cc]['continentcode'] != 'EU' and cc not in ('US', 'CA')
+        if re.search(RELIGIOUS, tags) or (re.search(SPOKEN, tags) and not (regional and genres)):
+            continue
+        language = r['language'].split(',')[0].strip()
+        if not genres and regional and language and language not in ('english', 'spanish', 'french', 'portuguese'):
+            genres = [language.title()]
         if not genres:
             continue
         score = niche_score(tags, name) + 0.9 * math.log10(1 + r['votes']) + 0.35 * math.log10(1 + r['clickcount'])
-        if score < 1.0:
+        if score < -0.5:
             continue
         candidates.append(dict(r=r, name=name, genres=genres, score=score, tier=2))
-    # Places with few stations in the directory get a lift, so the map is not only Europe and North America.
+    # Outside Europe and North America the bar is lower, and countries with few stations get a lift:
+    # a local station in Lagos or Dhaka is an encounter for most listeners, even when it plays the hits.
     strong = collections.Counter(c['r']['countrycode'] for c in candidates if c['score'] >= 2.2)
     for c in candidates:
-        c['score'] += 1.6 if strong[c['r']['countrycode']] < 12 else 0
+        cc = c['r']['countrycode']
+        c['region'] = region(cc, countries[cc]['continentcode'])
+        c['score'] += 1.6 if strong[cc] < 12 else 0
+        c['score'] += 1.4 if c['region'] not in ('Europe', 'North America') else 0
     candidates = [c for c in candidates if c['score'] >= 2.2]
 
     # Anchors: found by name, placed by the given city when Radio Browser has no location.
@@ -342,7 +383,7 @@ def main():
                 # A hand-placed station is an anchor unless it is a hits format.
                 tier=2 if re.search(r'hits', s['genre'], re.I) else 1, city=s['city'], freq=freq, alias=s.get('alias')))
 
-    pool = curated_rows + anchor_rows + sorted(candidates, key=lambda c: -c['score'])[:3600]
+    pool = curated_rows + anchor_rows + sorted(candidates, key=lambda c: -c['score'])[:4200]
     checks = check_all(c['r']['url_resolved'] for c in pool)
 
     chosen, seen_streams, seen_names = [], set(), set()
@@ -370,7 +411,8 @@ def main():
         if stream_key in seen_streams or name_key in seen_names:
             continue
         if c['tier'] == 2:
-            if per_country[cc] >= (28 if cc in ('US', 'DE', 'FR', 'GB') else 20):
+            europe = countries[cc]['continentcode'] == 'EU'
+            if per_country[cc] >= (24 if cc in ('US', 'DE', 'FR', 'GB') else 14 if europe else 20):
                 continue
             if per_city[city['geonameid']] >= 4 or per_family[family] >= 2:
                 continue
@@ -384,6 +426,7 @@ def main():
         per_family[family] += 1
         station = dict(
             id=r['stationuuid'], name=c['name'], city=city['name'], country=countries[cc]['name'],
+            region=region(cc, countries[cc]['continentcode']),
             lat=round(lat, 3), lon=round(lon, 3), zone=city['timezone'], genres=c['genres'],
             url=check['url'], cors=check['cors'], tier=c['tier'],
         )
@@ -394,6 +437,11 @@ def main():
             station['safari'] = False
         chosen.append(station)
 
+    sources = find_all_now_playing(chosen)
+    for station in chosen:
+        if sources.get(station['url']):
+            station['np'] = sources[station['url']]
+
     chosen.sort(key=lambda s: (s['tier'], s['country'], s['city'], s['name']))
     out = ROOT / 'dist/stations.js'
     out.write_text(
@@ -401,7 +449,58 @@ def main():
         '// Every stream answered with audio when this file was built.\n'
         'window.STATIONS = [\n' + ',\n'.join(json.dumps(s, ensure_ascii=False, separators=(',', ':')) for s in chosen) + '\n];\n')
     print(len(chosen), 'stations,', sum(s['tier'] == 1 for s in chosen), 'anchors,', len({s['country'] for s in chosen}), 'countries,',
-          sum(s['cors'] for s in chosen), 'allow analysis')
+          sum(s['cors'] for s in chosen), 'allow analysis,', sum('np' in s for s in chosen), 'say what is playing')
+
+
+def read_cors_json(url):
+    request = urllib.request.Request(url, headers={'Origin': ORIGIN, 'User-Agent': CHROME})
+    with urllib.request.urlopen(request, timeout=6) as response:
+        if (response.headers.get('Access-Control-Allow-Origin') or '') not in ('*', ORIGIN):
+            return None
+        return json.loads(response.read(600000).decode('utf-8', 'replace'))
+
+
+def find_now_playing(stream):
+    """A public, browser-readable source for the title on air: Icecast's status page or AzuraCast's API."""
+    parts = urllib.parse.urlsplit(stream)
+    base = f'{parts.scheme}://{parts.netloc}'
+    mount = parts.path.rstrip(';').rstrip('/')
+    try:
+        data = read_cors_json(base + '/status-json.xsl')
+        sources = (data or {}).get('icestats', {}).get('source', [])
+        sources = sources if isinstance(sources, list) else [sources]
+        for source in sources:
+            if urllib.parse.urlsplit(source.get('listenurl', '')).path.rstrip('/') == mount or len(sources) == 1:
+                return {'kind': 'icecast', 'url': base + '/status-json.xsl', 'mount': mount}
+    except Exception:  # noqa: BLE001 - no status page is the common case
+        pass
+    try:
+        data = read_cors_json(base + '/api/nowplaying')
+        data = data if isinstance(data, list) else [data] if data else []
+        for entry in data:
+            station = entry.get('station', {})
+            paths = [urllib.parse.urlsplit(m.get('url', '')).path.rstrip('/') for m in station.get('mounts', [])]
+            paths.append(urllib.parse.urlsplit(station.get('listen_url', '')).path.rstrip('/'))
+            if mount in paths or len(data) == 1:
+                return {'kind': 'azuracast', 'url': base + '/api/nowplaying/' + str(station.get('shortcode') or station.get('id'))}
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def find_all_now_playing(stations):
+    target = CACHE / 'now-playing.json'
+    found = json.loads(target.read_text()) if target.exists() else {}
+    todo = [] if OFFLINE else [s['url'] for s in stations if s['url'] not in found and s['id'] not in TRACK_FEEDS]
+    with concurrent.futures.ThreadPoolExecutor(48) as pool:
+        for url, source in zip(todo, pool.map(find_now_playing, todo)):
+            found[url] = source
+    target.write_text(json.dumps(found))
+    return found
+
+
+# Stations whose broadcaster publishes its own playlist feed, read by dist/track.js.
+TRACK_FEEDS = ('fip', 'kexp', 'swissjazz')
 
 
 if __name__ == '__main__':

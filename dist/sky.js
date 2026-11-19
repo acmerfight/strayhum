@@ -38,7 +38,16 @@ void main() {
   float px = 1. / radius;
   float d = length(p);
   float limb = line(abs(d - 1.), px, .5 * px);
-  if (d > 1. + 2. * px) { color = vec4(0.); return; }
+  // A thin atmosphere, lit only where the sun is on the limb.
+  if (d > 1.) {
+    vec3 edgeWorld = transpose(view) * vec3(p / d, 0.);
+    float lit = smoothstep(-.25, .65, dot(edgeWorld, sun));
+    float air = exp(-(d - 1.) / (14. * px)) * .07 * mix(.18, 1., lit) * smoothstep(0., .5, reveal);
+    float limbOut = limb * .3 * smoothstep(0., .3, reveal);
+    float a = clamp(air + limbOut, 0., 1.);
+    color = vec4(BONE * a, a);
+    return;
+  }
   float inside = clamp((1. - d) / px + .5, 0., 1.) * smoothstep(0., .25, reveal);
   float z = sqrt(max(0., 1. - d * d));
   vec3 w = transpose(view) * vec3(p, z);
@@ -52,7 +61,7 @@ void main() {
   float rim = mix(.45, 1., sqrt(z));
 
   // The coast, one pixel wide at any zoom.
-  float coastA = line(abs(sdf), aaS, .55 * aaS) * mix(.42, .86, day) * smoothstep(0., .3, reveal);
+  float coastA = line(abs(sdf), aaS, .55 * aaS) * mix(.3, .88, day) * smoothstep(0., .3, reveal);
 
   // Line spacing on screen: a little wider on dense displays, so lines stay distinct.
   float pxPerDegree = radius * PI / 180.;
@@ -65,7 +74,7 @@ void main() {
   float aaT = max(fwidth(t), 1e-4);
   float k = floor(t + .5);
   float waterA = line(abs(t - k), aaT, .45 * aaT) * step(.5, k) * pow(clamp(1. - k / 5.5, 0., 1.), 1.4);
-  waterA *= (1. - smoothstep(.3, .5, aaT)) * clamp((reveal - .12) * 10. - k, 0., 1.) * mix(.22, .46, day);
+  waterA *= (1. - smoothstep(.3, .5, aaT)) * clamp((reveal - .12) * 10. - k, 0., 1.) * mix(.12, .46, day);
 
   // Hatching along the parallels. Lines are thin at night and broad in daylight, as an engraver
   // shades with line weight. Spacing follows the zoom in powers of two, so lines never slide.
@@ -73,13 +82,13 @@ void main() {
   float step1 = exp2(floor(level));
   float minor = 1. - fract(level);
   float aaL = max(fwidth(latDeg), 1e-5);
-  float halfWidth = mix(.05, .19, day) * step1;
+  float halfWidth = mix(.032, .19, day) * step1;
   float major = line(abs(fract(latDeg / (2. * step1) + .5) - .5) * 2. * step1, aaL, halfWidth);
   float every = line(abs(fract(latDeg / step1 + .5) - .5) * step1, aaL, halfWidth);
   float hatch = mix(major, every, minor);
   hatch = mix(hatch, 2. * halfWidth / step1, smoothstep(.25 * step1, .5 * step1, aaL));
   float land = clamp(sdf / aaS + .5, 0., 1.);
-  float hatchA = hatch * land * mix(.16, .55, day) * smoothstep(.4, 1., reveal);
+  float hatchA = hatch * land * mix(.09, .56, day) * smoothstep(.4, 1., reveal);
 
   // A faint graticule every thirty degrees.
   float gLat = abs(fract(latDeg / 30. + .5) - .5) * 30.;
@@ -131,7 +140,9 @@ uniform vec3 sun;
 uniform float reveal;
 uniform float level;
 out vec4 tint;
+out float core;
 out float edge;
+out float halo;
 const vec3 BONE = vec3(.914, .89, .839);
 const vec3 AMBER = vec3(1., .66, .3);
 void main() {
@@ -144,25 +155,32 @@ void main() {
   float shimmer = 1. + .28 * twinkle * sin(time * (.5 + info.x * 1.3) + info.x * 47.);
   float size = 2.1;
   vec3 c = BONE;
-  float a = mix(.38, .82, night) * shimmer;
+  float a = mix(.3, .95, night) * shimmer;
+  halo = .32 * night;
   if (info.y == 1.) { c = mix(BONE, AMBER, .45); a = .9; }
   else if (info.y == 2.) { c = AMBER; size = 3.4; a = 1.; }
-  else if (info.y == 3.) { c = AMBER; size = 4.6 + 4. * level; a = 1.; }
+  else if (info.y == 3.) { c = AMBER; size = 4.6 + 4. * level; a = 1.; halo = .55; }
   else if (info.y == 4.) { size = 4.2; a = 1.; }
   float shown = smoothstep(.5 + .4 * info.x, .62 + .4 * info.x, reveal);
   tint = vec4(c, clamp(a, 0., 1.) * facing * shown);
-  gl_PointSize = facing > 0. ? (size * (.75 + .25 * facing) + 2.) * dpr : 0.;
-  edge = 2. * dpr / gl_PointSize;
+  float drawn = size * (.75 + .25 * facing);
+  gl_PointSize = facing > 0. ? (drawn + 2. + 12. * halo) * dpr : 0.;
+  core = drawn * dpr / max(gl_PointSize, 1.);
+  edge = 2. * dpr / max(gl_PointSize, 1.);
 }`;
 
 const POINT_FRAGMENT = `#version 300 es
 precision mediump float;
 in vec4 tint;
+in float core;
 in float edge;
+in float halo;
 out vec4 color;
 void main() {
   float r = length(gl_PointCoord - .5) * 2.;
-  float a = tint.a * (1. - smoothstep(1. - edge * 1.2, 1., r));
+  float disc = 1. - smoothstep(core - edge, core, r);
+  float glow = halo * pow(max(0., 1. - r), 2.6);
+  float a = tint.a * min(1., disc + glow);
   color = vec4(tint.rgb * a, a);
 }`;
 
@@ -271,7 +289,8 @@ class Sky {
     const r = radius * dpr;
     // The surface shader only runs over the globe's square.
     gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(Math.floor(center[0] - r - 3), Math.floor(center[1] - r - 3), Math.ceil(2 * r + 6), Math.ceil(2 * r + 6));
+    const pad = 60 * dpr;
+    gl.scissor(Math.floor(center[0] - r - pad), Math.floor(center[1] - r - pad), Math.ceil(2 * (r + pad)), Math.ceil(2 * (r + pad)));
 
     const s = this.surface;
     gl.useProgram(s.program);

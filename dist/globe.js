@@ -37,18 +37,30 @@ class Globe {
     return Boolean(this.sky.gl);
   }
 
+  /** Renders at a lower pixel density when frames come slowly. Lines stay sharp at 1.5. */
+  degrade() {
+    if (this.dprCap <= 1) return;
+    this.dprCap = this.dprCap > 1.5 ? 1.5 : 1;
+    this.resize();
+  }
+
   resize() {
     const w = innerWidth;
     const h = innerHeight;
     this.w = w;
     this.h = h;
-    this.dpr = Math.min(devicePixelRatio || 1, 2);
+    this.dprCap ??= 2;
+    this.dpr = Math.min(devicePixelRatio || 1, this.dprCap);
     for (const canvas of [this.sky.canvas, this.ink]) {
       canvas.width = Math.round(w * this.dpr);
       canvas.height = Math.round(h * this.dpr);
     }
     this.portrait = w < 720 || w / h < 0.8;
-    if (this.portrait) {
+    if (document.body.classList.contains('poster')) {
+      this.cx = w * 0.7;
+      this.cy = h * 0.5;
+      this.baseRadius = h * 0.56;
+    } else if (this.portrait) {
       // On a phone the globe may run past the sides of the screen; its top half is what matters.
       this.cx = w / 2;
       this.cy = h * 0.385;
@@ -133,6 +145,38 @@ class Globe {
     return this.flightEnd;
   }
 
+  /** Turns the earth under a fixed needle, like a dial, along a heading chosen by chance. */
+  startWander() {
+    const c = this.center();
+    const east = normalize([c[2], 0, -c[0]]);
+    const north = cross(c, east);
+    const a = Math.random() * Math.PI * 2;
+    const heading = [east[0] * Math.cos(a) + north[0] * Math.sin(a), east[1] * Math.cos(a) + north[1] * Math.sin(a), east[2] * Math.cos(a) + north[2] * Math.sin(a)];
+    this.wander = { axis: normalize(cross(c, heading)), start: performance.now(), speed: 0 };
+    this.flight = null;
+    this.inertia = null;
+    this.needle = 1;
+  }
+
+  stopWander() {
+    this.wander = null;
+  }
+
+  /** The station under the needle: the nearest light to the centre of the globe. */
+  underNeedle(reach = Infinity) {
+    let best = null;
+    let bestAngle = Infinity;
+    const c = this.center();
+    this.vectors.forEach((v, i) => {
+      const angle = Math.acos(clamp(dot(c, v), -1, 1));
+      if (angle < bestAngle) {
+        bestAngle = angle;
+        best = i;
+      }
+    });
+    return bestAngle * this.radius <= reach ? best : null;
+  }
+
   /** Draws the journey already travelled tonight, without animation. */
   remember(path) {
     this.legs = [];
@@ -176,7 +220,25 @@ class Globe {
 
   step(now, dt) {
     const f = this.flight;
-    if (f) {
+    const wander = this.wander;
+    this.needle = wander ? 1 : Math.max(0, (this.needle || 0) - dt * 2.2);
+    if (wander) {
+      const t = (now - wander.start) / 1000;
+      // The dial gathers speed for a moment, as a heavy knob would.
+      wander.speed = (12 + 40 * smoothstep(0.1, 1.8, t)) * DEG;
+      const c = this.center();
+      const k = wander.axis;
+      const turn = wander.speed * dt;
+      const kc = cross(k, c);
+      this.setCamera(normalize([c[0] * Math.cos(turn) + kc[0] * Math.sin(turn), c[1] * Math.cos(turn) + kc[1] * Math.sin(turn), c[2] * Math.cos(turn) + kc[2] * Math.sin(turn)]));
+      this.flightScale += (0.9 - this.flightScale) * Math.min(1, dt * 3);
+      const passing = this.underNeedle(26);
+      if (passing !== this.passing) {
+        this.passing = passing;
+        this.hover(passing);
+        if (passing !== null) this.onPass?.(passing, wander.speed / (52 * DEG));
+      }
+    } else if (f) {
       const t = f.duration ? Math.min(1, (now - f.start) / f.duration) : 1;
       const e = t * t * t * (t * (t * 6 - 15) + 10);
       this.setCamera(slerp(f.origin, f.target, f.angle, e));
@@ -241,11 +303,27 @@ class Globe {
     this.placeLabels();
   }
 
+  /** The needle at the centre of the globe, shown while the dial turns and for a moment after. */
+  drawNeedle(c) {
+    if (!this.needle) return;
+    const a = this.needle;
+    c.strokeStyle = `rgba(255,169,77,${0.9 * a})`;
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(this.cx, this.cy, 15, 0, Math.PI * 2);
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      c.moveTo(this.cx + dx * 20, this.cy + dy * 20);
+      c.lineTo(this.cx + dx * 27, this.cy + dy * 27);
+    }
+    c.stroke();
+  }
+
   drawInk(now) {
     const c = this.pen;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
     if (!this.ok) this.drawFallback(c);
+    this.drawNeedle(c);
     const latest = this.legs.length - 1;
     this.legs.forEach((leg, k) => {
       const t = leg.duration ? clamp((now - leg.start) / leg.duration, 0, 1) : 1;
@@ -465,6 +543,15 @@ function slerp(a, b, angle, t) {
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function cross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function normalize(v) {
+  const n = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / n, v[1] / n, v[2] / n];
 }
 
 function clamp(x, lo, hi) {

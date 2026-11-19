@@ -1,4 +1,4 @@
-/* strayhum: one small station at a time. Listen; when you want somewhere else, drift.
+/* Stray Hum: one small station at a time. Listen; when you want somewhere else, drift.
    This file conducts: it starts tuning, flies the globe, holds the sound until the flight
    lands, and remembers the night. */
 const $ = (id) => document.getElementById(id);
@@ -7,11 +7,20 @@ const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(na
 const stations = window.STATIONS.filter((s) => !(safari && s.safari === false));
 const memory = new Encounters(stations);
 const receiver = new Receiver();
-const credit = new TrackCredit($('credit'));
+const credit = new NowPlaying($('credit'));
 const plate = ['place', 'clock', 'name', 'genres', 'eyebrow'].map($);
-const statusText = { idle: '', tuning: 'Tuning', onair: 'On air', paused: 'Paused', faded: 'The signal faded · drifting on' };
+const statusText = {
+  idle: '',
+  tuning: 'Tuning',
+  onair: 'On air',
+  paused: 'Paused',
+  faded: 'The signal faded · drifting on',
+  wandering: 'Let go to land',
+};
+const params = new URL(location.href).searchParams;
 
-let current = memory.first(new URL(location.href).searchParams.get('station'));
+let current = memory.first(params.get('station'));
+const sent = params.has('sent') && stations[current].id === params.get('station');
 let state = 'idle';
 let token = 0;
 let started = false;
@@ -19,6 +28,7 @@ let beaconTarget = 0.55;
 let driftTimer = 0;
 let preview = { i: null, touch: false };
 let onPlate = null;
+let wandering = false;
 
 const globe = new Globe({
   stations,
@@ -26,13 +36,14 @@ const globe = new Globe({
   onPreview: showPreview,
   onInteract: () => hint.after('globe'),
 });
+globe.onPass = (i, speed) => receiver.pass(speed);
 globe.reduced ||= localStorage.getItem('strayhum.motion') === 'off';
 
 function setState(next) {
   state = next;
   document.body.dataset.state = next;
   $('status').textContent = statusText[next];
-  const running = next === 'onair' || next === 'tuning';
+  const running = next === 'onair' || next === 'tuning' || next === 'wandering';
   $('play').setAttribute('aria-label', running ? 'Pause' : 'Listen');
   globe.playing = running;
 }
@@ -75,7 +86,7 @@ function arrive(i) {
   globe.ring(1, 0.55);
   memory.arrive(i);
   refreshMemory();
-  credit.follow(stations[i].id);
+  credit.follow(stations[i]);
   hint.after('arrive');
 }
 
@@ -104,8 +115,56 @@ function drift() {
   hint.after('drift');
 }
 
+/** Holding Drift turns the earth like a dial; letting go lands on the light under the needle. */
+function startWander() {
+  receiver.start();
+  started = true;
+  token++;
+  clearTimeout(driftTimer);
+  closePreview();
+  credit.clear();
+  receiver.wander();
+  wandering = true;
+  beaconTarget = 0.15;
+  globe.startWander();
+  setState('wandering');
+  hint.after('wander');
+}
+
+function land() {
+  wandering = false;
+  globe.stopWander();
+  globe.passing = null;
+  globe.hover(null);
+  go(globe.underNeedle());
+}
+
+/** Sends this station: the system share sheet on phones, a copied link elsewhere. */
+async function share() {
+  const s = stations[current];
+  const url = `https://strayhum.com/?station=${encodeURIComponent(s.id)}&sent`;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  try {
+    if (touch && navigator.share) {
+      await navigator.share({ title: `${s.name} — ${s.city}`, text: `Something I found on Stray Hum: ${s.name}, ${s.city}.`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    flash('Link copied');
+  } catch {
+    // The share sheet was dismissed.
+  }
+}
+
+/** A word in the status line for a moment, then back to the state. */
+function flash(text) {
+  $('status').textContent = text;
+  clearTimeout(flash.timer);
+  flash.timer = setTimeout(() => ($('status').textContent = statusText[state]), 1800);
+}
+
 function keep() {
-  const kept = memory.toggleKeep(current);
+  const kept = memory.toggleKeep(current, credit.line);
   $('keep').setAttribute('aria-pressed', String(kept));
   $('keep').setAttribute('aria-label', kept ? 'Kept. Select to let go' : 'Keep this station');
   refreshMemory();
@@ -133,7 +192,7 @@ function fillPlate(i, animate) {
   $('name').style.setProperty('--name-size', nameSize(s.name) + 'px');
   $('keep').setAttribute('aria-pressed', String(memory.isKept(i)));
   document.querySelector('#here .city').textContent = s.city;
-  document.title = `${s.name} — ${s.city} · strayhum`;
+  document.title = `${s.name} — ${s.city} · Stray Hum`;
   if (animate && !globe.reduced) enterPlate();
 }
 
@@ -166,7 +225,7 @@ function enterPlate() {
   // The place resolves as if read off a map: letters close up as they appear.
   place.animate([{ opacity: 0, letterSpacing: '.5em' }, { opacity: 1, letterSpacing: '.22em' }], { duration: 1100, easing: ease, fill: 'backwards' });
   clock.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 700, delay: 380, easing: ease, fill: 'backwards' });
-  name.animate([{ opacity: 0, transform: 'translateY(16px)', filter: 'blur(6px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }], {
+  name.animate([{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], {
     duration: 1150,
     delay: 140,
     easing: ease,
@@ -208,14 +267,16 @@ function refreshMemory() {
 function renderLog() {
   const list = $('kept-list');
   list.replaceChildren();
-  for (const { i } of memory.keptIndices()) {
+  for (const { i, song } of memory.keptIndices()) {
     const s = stations[i];
     const li = document.createElement('li');
     const open = document.createElement('button');
     open.className = 'open';
-    open.innerHTML = '<strong></strong><span></span>';
+    open.innerHTML = '<strong></strong><span></span><em></em>';
     open.querySelector('strong').textContent = s.name;
     open.querySelector('span').textContent = `${s.city}, ${s.country} · ${clockAt(s)}`;
+    // The song that was playing when it was kept, if the station said.
+    open.querySelector('em').textContent = song || '';
     open.onclick = () => {
       $('log').close();
       go(i);
@@ -254,6 +315,7 @@ function renderLog() {
 
 const hint = {
   seen: localStorage.getItem('strayhum.seen') === '1',
+  dial: localStorage.getItem('strayhum.dial') === '1',
   show(text, ms) {
     const el = $('hint');
     el.textContent = text;
@@ -267,6 +329,12 @@ const hint = {
     this.timer = setTimeout(() => ($('hint').hidden = true), 800);
   },
   after(moment) {
+    if (moment === 'wander' && !this.dial) {
+      this.dial = true;
+      localStorage.setItem('strayhum.dial', '1');
+      this.hide();
+    }
+    if (moment === 'drift' && this.seen && !this.dial) this.show('Hold Drift to turn the dial yourself.', 7000);
     if (this.seen) return;
     if (moment === 'arrive' && !this.dragged) this.show('Every light is a station. Drag the earth, or drift.', 9000);
     if (moment === 'globe') this.dragged = true;
@@ -281,8 +349,35 @@ const hint = {
 /* Controls ------------------------------------------------------------------ */
 
 $('play').onclick = toggle;
-$('drift').onclick = drift;
 $('keep').onclick = keep;
+$('share').onclick = share;
+
+// Drift: a press drifts by chance; a hold turns the dial.
+{
+  const button = $('drift');
+  let hold = 0;
+  let held = false;
+  button.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    button.setPointerCapture(e.pointerId);
+    held = false;
+    hold = setTimeout(() => {
+      held = true;
+      startWander();
+    }, 280);
+  });
+  const release = () => {
+    clearTimeout(hold);
+    if (wandering) land();
+  };
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('contextmenu', (e) => e.preventDefault());
+  button.addEventListener('click', () => {
+    if (held) held = false;
+    else drift();
+  });
+}
 $('log-open').onclick = () => {
   renderLog();
   $('log').showModal();
@@ -305,7 +400,10 @@ addEventListener('keydown', (e) => {
   if (e.key === ' ' && !onControl) {
     e.preventDefault();
     toggle();
-  } else if (e.key === 'd' || e.key === 'D' || (e.key === 'ArrowRight' && e.target !== $('ink') && !onControl)) {
+  } else if (e.key === 'd' || e.key === 'D') {
+    // As with the button: tap to drift, hold to turn the dial.
+    if (!e.repeat) keyHold = setTimeout(startWander, 280);
+  } else if (e.key === 'ArrowRight' && e.target !== $('ink') && !onControl) {
     drift();
   } else if (e.key === 'k' || e.key === 'K') {
     keep();
@@ -314,14 +412,29 @@ addEventListener('keydown', (e) => {
   }
 });
 
+let keyHold = 0;
+addEventListener('keyup', (e) => {
+  if (e.key !== 'd' && e.key !== 'D') return;
+  clearTimeout(keyHold);
+  if (wandering) land();
+  else if (!$('log').open && !e.metaKey && !e.ctrlKey && !e.altKey) drift();
+});
+
 /* Frame loop ---------------------------------------------------------------- */
 
 let last = performance.now();
 let revealStart = null;
+let slow = 0;
 
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  // Two seconds of slow frames: render fewer pixels.
+  slow = dt > 0.024 ? slow + dt : Math.max(0, slow - dt);
+  if (slow > 2) {
+    slow = 0;
+    globe.degrade();
+  }
   const sound = state === 'onair' ? receiver.sample(dt) : null;
   if (sound?.hit) globe.ring(sound.hit * 0.85, sound.score.speed);
   globe.beaconOn = (globe.beaconOn ?? 0) + (beaconTarget - (globe.beaconOn ?? 0)) * Math.min(1, dt * 2.5);
@@ -354,7 +467,13 @@ setInterval(() => {
   globe.remember(memory.path());
   refreshMemory();
   fillPlate(current, false);
+  if (sent) $('eyebrow').textContent = 'Someone sent you this';
   setState('idle');
+  // A still of the engraving for link previews: no controls, the globe set like a print.
+  if (params.has('poster')) {
+    document.body.classList.add('poster');
+    globe.resize();
+  }
   if (!hint.seen) hint.show('Listen. When you want somewhere else, drift.');
   (globe.ok ? globe.sky.ready : Promise.resolve()).then(() => (revealStart = performance.now()));
   requestAnimationFrame(frame);

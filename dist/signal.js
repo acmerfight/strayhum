@@ -143,6 +143,20 @@ class Receiver {
     }, seconds * 1000 + 60);
   }
 
+  /** The dial is turning: the station slides away under the static. */
+  wander() {
+    this.token++;
+    this.silence(0.5);
+    this.resetEnvelope();
+    if (this.staticOn) this.static.up();
+  }
+
+  pass(speed) {
+    if (!this.staticOn) return;
+    this.static.sweep(speed);
+    this.static.blip();
+  }
+
   stop() {
     this.token++;
     this.static?.down(0.3);
@@ -255,6 +269,7 @@ class Static {
     noise.connect(this.band).connect(this.gain);
     this.whistle.connect(whistleLevel).connect(this.gain);
     this.gain.connect(out);
+    this.out = out;
     noise.start();
     wander.start();
     this.whistle.start();
@@ -276,6 +291,31 @@ class Static {
     const now = this.context.currentTime;
     this.gain.gain.cancelScheduledValues(now);
     this.gain.gain.setTargetAtTime(0, now, seconds / 3);
+  }
+
+  /** While the dial turns: the whistle rises with speed. */
+  sweep(speed) {
+    const now = this.context.currentTime;
+    this.whistle.frequency.cancelScheduledValues(now);
+    this.whistle.frequency.setTargetAtTime(500 + 2300 * speed + Math.random() * 120, now, 0.08);
+    this.band.Q.setTargetAtTime(0.55 + 1.6 * speed, now, 0.1);
+  }
+
+  /** Passing a station on the dial: a short carrier tone through the hiss. */
+  blip() {
+    const now = this.context.currentTime;
+    if (now - (this.lastBlip || 0) < 0.07) return;
+    this.lastBlip = now;
+    const tone = this.context.createOscillator();
+    tone.frequency.value = 650 + Math.random() * 1100;
+    tone.frequency.exponentialRampToValueAtTime(tone.frequency.value * 0.82, now + 0.16);
+    const level = this.context.createGain();
+    level.gain.setValueAtTime(0, now);
+    level.gain.linearRampToValueAtTime(0.05, now + 0.012);
+    level.gain.exponentialRampToValueAtTime(0.0005, now + 0.16);
+    tone.connect(level).connect(this.out);
+    tone.start(now);
+    tone.stop(now + 0.18);
   }
 }
 

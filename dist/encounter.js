@@ -26,14 +26,18 @@ class Encounters {
     return this.pick(null, (s) => (isNightAt(s) ? 1.8 : 1));
   }
 
-  /** Somewhere else: far enough to feel like travel, a different country and sound if possible. */
+  /** Somewhere else: another part of the world, far enough to feel like travel, a different sound. */
   next(from) {
     return this.pick(from, () => 1);
   }
 
+  /** Chooses a region of the world first, then a station in it. The directory is dense in Europe;
+      choosing by region keeps encounters spread across the whole map. */
   pick(from, bias) {
     const recentIds = new Set(this.heard.slice(-120));
-    const recentCountries = this.night.slice(-3).map((n) => this.stations[this.byId.get(n.id)].country);
+    const tonight = this.night.map((n) => this.stations[this.byId.get(n.id)]);
+    const recentCountries = tonight.slice(-3).map((s) => s.country);
+    const recentRegions = tonight.slice(-2).map((s) => s.region);
     const origin = from === null ? null : this.stations[from];
     const weights = this.stations.map((s, i) => {
       if (i === from || this.faded[s.id] || recentIds.has(s.id)) return 0;
@@ -46,18 +50,23 @@ class Encounters {
       if (recentCountries.includes(s.country)) w *= 0.2;
       return w;
     });
-    const total = weights.reduce((a, b) => a + b, 0);
-    if (!total) {
+    const regions = new Map();
+    weights.forEach((w, i) => {
+      if (!w) return;
+      const r = this.stations[i].region;
+      if (!regions.has(r)) regions.set(r, { total: 0, count: 0 });
+      regions.get(r).total += w;
+      regions.get(r).count++;
+    });
+    if (!regions.size) {
       // Everything has been heard: start the circle again.
       this.heard = [];
       return this.pick(from, bias);
     }
-    let r = Math.random() * total;
-    for (let i = 0; i < weights.length; i++) {
-      r -= weights[i];
-      if (r <= 0) return i;
-    }
-    return weights.length - 1;
+    // A region weighs by the square root of what it holds: small regions come up far more often
+    // than their size, without the few stations there repeating every hour.
+    const region = choose([...regions].map(([name, r]) => [name, Math.sqrt(r.count) * (recentRegions.includes(name) ? 0.15 : 1)]));
+    return choose(weights.map((w, i) => [i, this.stations[i].region === region ? w : 0]));
   }
 
   arrive(i) {
@@ -77,16 +86,17 @@ class Encounters {
     return this.kept.some((k) => k.id === this.stations[i].id);
   }
 
-  toggleKeep(i) {
+  /** Keeps a station, with the song that was playing when it was kept. */
+  toggleKeep(i, song = '') {
     const id = this.stations[i].id;
     if (this.isKept(i)) this.kept = this.kept.filter((k) => k.id !== id);
-    else this.kept.unshift({ id, at: Date.now() });
+    else this.kept.unshift({ id, at: Date.now(), song });
     this.save();
     return this.isKept(i);
   }
 
   keptIndices() {
-    return this.kept.map((k) => ({ i: this.byId.get(k.id), at: k.at }));
+    return this.kept.map((k) => ({ i: this.byId.get(k.id), at: k.at, song: k.song }));
   }
 
   /** Tonight's route, oldest first. */
@@ -112,6 +122,16 @@ function localHour(station, date = new Date()) {
 function isNightAt(station) {
   const h = localHour(station);
   return h >= 20 || h < 5;
+}
+
+/** One key from [key, weight] pairs, at random in proportion to weight. */
+function choose(pairs) {
+  let r = Math.random() * pairs.reduce((sum, [, w]) => sum + w, 0);
+  for (const [key, w] of pairs) {
+    r -= w;
+    if (w > 0 && r <= 0) return key;
+  }
+  return pairs.findLast(([, w]) => w > 0)[0];
 }
 
 function smoothstep(a, b, x) {
