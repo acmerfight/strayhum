@@ -84,8 +84,8 @@ function arrive(i) {
   if (state === 'onair') return;
   receiver.arrive();
   setState('onair');
-  // The first sound comes in from the horizon as one long swell.
-  outlook.swell(1);
+  // The first sound leaves the station as one wide, slow ring.
+  outlook.arrival();
   memory.arrive(i);
   refreshMemory();
   credit.follow(stations[i]);
@@ -497,7 +497,6 @@ function frame(now) {
     outlook.degrade();
   }
   const sound = state === 'onair' ? receiver.sample(dt) : null;
-  if (sound?.hit) outlook.swell(sound.hit);
   outlook.reveal = outlook.reduced ? 1 : Math.min(1, (now - revealStart) / 2200);
   const light = outlook.frame(now, dt, sound);
   document.body.dataset.tone = outlook.tone;
@@ -505,7 +504,7 @@ function frame(now) {
   if (!outlook.ok) paintFallback(light);
   drawVoyage();
   placeFinder();
-  document.body.style.setProperty('--level', (sound?.level ?? 0).toFixed(3));
+  document.body.style.setProperty('--pulse', outlook.pulse.toFixed(3));
   if (!document.hidden) requestAnimationFrame(frame);
 }
 

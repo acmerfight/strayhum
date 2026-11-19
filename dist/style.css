@@ -80,7 +80,7 @@
   --sans: Geist, -apple-system, 'Segoe UI', 'Noto Sans', 'PingFang SC', sans-serif;
   --edge: max(40px, 4.4vw);
   --foot: max(40px, 6vh);
-  --level: 0;
+  --pulse: 0;
   color-scheme: dark;
 }
 
@@ -530,14 +530,15 @@ body:is([data-state='onair'], [data-state='tuning'], [data-state='wandering']) #
   display: block;
 }
 
-/* The ring around Listen follows the loudness of the station. */
+/* The ring around Listen follows the beat of the station. */
 #play .breath {
   position: absolute;
   inset: -1px;
   border-radius: 50%;
   border: 1px solid var(--amber);
   opacity: 0;
-  transform: scale(calc(1 + var(--level) * 0.16));
+  /* The ring around Listen takes each beat: a small lift that settles before the next. */
+  transform: scale(calc(1 + var(--pulse) * 0.07));
   transition: opacity 0.6s;
   pointer-events: none;
 }
@@ -547,7 +548,8 @@ body[data-state='onair'] #play {
 }
 
 body[data-state='onair'] #play .breath {
-  opacity: 0.9;
+  opacity: calc(0.5 + var(--pulse) * 0.5);
+  transition: none;
 }
 
 body[data-state='idle'] #play .breath {

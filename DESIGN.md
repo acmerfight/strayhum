@@ -16,6 +16,22 @@ The whole screen is the Earth in space, set right of centre with the caption bes
 
 **Development.** Rendered in linear light, then printed: ACES, cool colour held back while warm light keeps its colour, split toning, lifted blacks, halation in two widths, a trace of lens fringing toward the edges, grain, vignette.
 
+## Motion in time with the music
+
+The music moves the Earth at three speeds, each following a layer of the music's own time:
+
+| Layer | Length | Follows | On the Earth |
+| --- | --- | --- | --- |
+| Beat | about half a second | the tempo and phase found by the pulse tracker | the playing station's point lifts and a hairline leaves it; a small ring; the ring around Listen gives a little |
+| Bar | about two seconds | the first beat of each four, found from the bass | a wider ring that lives exactly one bar; towns brighten as it crosses them |
+| Phrase | eight to thirty seconds | a slow envelope of loudness | the warmth around the station and the brightness of the night side's lights |
+
+Music without a steady pulse (classical, ambient, speech) gets only the phrase, and a slow, wide ring when a strong accent stands out. The less certain the beat, the less is drawn: the bar ring first, every beat only when the pulse is clear. A station whose samples cannot be read gets only a slow breath; no beat is invented for it.
+
+**How the beat is found.** An AudioWorklet measures onsets on the audio thread every 512 samples, broadband and in the bass, as rises in decibels against what is usual in that music, so detection does not depend on the frame rate (`dist/onset-worklet.js`). `dist/pulse.js` looks back over eight seconds every half second: the tempo is the period at which onsets best repeat, weighted toward moderate tempos and checked against twice its length; the beat is the grid at that period carrying the most onset energy, bass counting more, so off-beat hats and swing do not pull it; the bar's first beat is the one carrying the most bass, confirmed twice before it moves. Beats are stamped with the moment they come out of the speakers and drawn then. Without AudioWorklet, the analyser feeds the same tracker once a frame.
+
+Checked offline against synthetic house, techno, hip-hop, swung afrobeat, drum & bass and a ballad (tempo within 2%, beats within 25 ms, bar's first beat right, no lock on beatless input), and live: techno and house locked with beats spaced within 6 ms; classical not locked.
+
 ## Motion score
 
 | Moment | What happens | Why |
@@ -70,7 +86,9 @@ Stream availability changes; rebuild the stations every few weeks.
 | `src/earth.js` | The Earth with three.js: ground, relief, sea, clouds, lights, air, stations, journeys, turning by hand, and the print. Built to `dist/earth.js` with `npm run build`. |
 | `dist/daylight.js` | The sun and moon for a place and moment, time differences. |
 | `dist/weather.js` | The weather at a station, from Open-Meteo. |
-| `dist/signal.js` | The receiver: playback, static, and onset detection for the swells. |
+| `dist/signal.js` | The receiver: playback, static, the level and phrase of the sound. |
+| `dist/onset-worklet.js` | Onsets on the audio thread. |
+| `dist/pulse.js` | Tempo, beat and bar from the onsets. |
 | `dist/encounter.js` | Where to drift next, and what to remember (kept, tonight, faded). |
 | `dist/app.js` | Conducts the above; the caption, the deck, the log. |
 | `dist/nowplaying.js` | The song on air, from broadcaster playlists or stream-server status, cleaned. |

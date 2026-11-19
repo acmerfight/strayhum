@@ -58,8 +58,8 @@ uniform sampler2D lights;
 uniform sampler2D clouds;
 uniform float cloudShift;
 uniform vec3 playing;
-uniform float rings[6];
-uniform float level;
+uniform vec2 rings[6];
+uniform float glow;
 ${GEO_GLSL}
 #include <logdepthbuf_pars_fragment>
 void main() {
@@ -97,10 +97,27 @@ void main() {
   vec3 cloudLit = vec3(0.92, 0.93, 0.95) * light * max(mu * 0.9 + 0.1, 0.0) * smoothstep(-0.03, 0.05, mu) * 1.35;
   col = mix(col, cloudLit, cloud * 0.92);
 
-  // Night: the lights of towns, dimmed where cloud lies over them, which they glow into.
+  // The music, at two speeds: rings that leave the station on the beat and the bar, each a fine
+  // line with a soft band behind it; and a warmth around the station that follows the phrase.
+  float a = acos(clamp(dot(n, playing), -1.0, 1.0));
+  float aa = fwidth(a);
+  float ring = 0.0;
+  float band = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float r = rings[i].x;
+    float w = rings[i].y;
+    if (w <= 0.0) continue;
+    ring += smoothstep(aa * 1.4, 0.0, abs(a - r)) * w;
+    band += exp(-pow((a - r) / 0.014, 2.0)) * w;
+  }
+  ring = clamp(ring, 0.0, 1.0);
+  band = clamp(band, 0.0, 1.0);
+
+  // Night: the lights of towns, dimmed where cloud lies over them, which they glow into. They
+  // breathe with the phrase, and brighten for a moment as a ring passes over them.
   float town = texture2D(lights, uv).r;
   float dark = 1.0 - smoothstep(-0.12, 0.05, mu);
-  col += vec3(1.0, 0.58, 0.26) * pow(town, 1.3) * dark * (1.0 - cloud * 0.65) * (1.7 + 0.9 * level);
+  col += vec3(1.0, 0.58, 0.26) * pow(town, 1.3) * dark * (1.0 - cloud * 0.65) * (1.5 + 0.7 * glow + 3.0 * band);
   col += vec3(0.5, 0.3, 0.16) * town * cloud * dark * 0.35;
 
   // The air between you and the ground: thickest toward the edge, blue by day, red at dusk.
@@ -108,16 +125,9 @@ void main() {
   col = mix(col, airColour(mu) * 0.55, haze * 0.75 * smoothstep(-0.05, 0.12, mu));
   col += airColour(mu) * 0.04 * smoothstep(-0.1, 0.4, mu);
 
-  // Sound leaves the station playing as fine rings on the face of the Earth.
-  float a = acos(clamp(dot(n, playing), -1.0, 1.0));
-  float aa = fwidth(a);
-  float ring = 0.0;
-  for (int i = 0; i < 6; i++) {
-    float r = rings[i];
-    if (r <= 0.0) continue;
-    ring += smoothstep(aa * 1.5, 0.0, abs(a - r)) * (1.0 - r / 0.55);
-  }
-  col += vec3(1.0, 0.62, 0.3) * clamp(ring, 0.0, 1.0) * 0.9;
+  vec3 amber = vec3(1.0, 0.62, 0.3);
+  col += amber * (ring * 0.85 + band * 0.05);
+  col += amber * exp(-a * a / (0.0005 + 0.003 * glow)) * 0.1 * glow;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -169,6 +179,7 @@ varying float vKind;
 varying float vLit;
 uniform float time;
 uniform float stations;
+uniform float beat;
 #include <logdepthbuf_pars_fragment>
 void main() {
   #include <logdepthbuf_fragment>
@@ -177,8 +188,10 @@ void main() {
   vec3 col;
   if (vKind > 5.5) col = vec3(1.0, 0.97, 0.9) * 1.6 * (smoothstep(0.42, 0.25, r) + smoothstep(0.09, 0.0, abs(r - 0.85)));
   else if (vKind > 4.5) {
-    float beat = fract(time * 0.45);
-    col = amber * 2.6 * (smoothstep(0.34, 0.18, r) + smoothstep(0.08, 0.0, abs(r - 0.3 - 0.62 * beat)) * (1.0 - beat) * 0.8);
+    // On each beat the point brightens and a hairline leaves it, gone before the next beat.
+    float since = 1.0 - beat;
+    col = amber * (2.2 + 1.6 * beat) * smoothstep(0.32 + 0.06 * beat, 0.16, r);
+    col += amber * 1.4 * smoothstep(0.07, 0.0, abs(r - 0.32 - 0.6 * since)) * beat;
   } else if (vKind > 3.5) col = amber * 1.6 * smoothstep(0.5, 0.2, r);
   // A station: a small point, a little brighter on the night side, quieter in daylight.
   else if (vKind > 2.5) col = vec3(1.0, 0.96, 0.88) * smoothstep(0.55, 0.1, r) * mix(0.55, 1.0, smoothstep(0.1, -0.15, vLit)) * stations;
@@ -299,7 +312,11 @@ class Outlook {
     this.view = { sub: [0, 0, 1], zoom: REST };
     this.weatherTarget = { ...CLEAR };
     this.rings = [];
-    this.level = 0;
+    this.phrase = 0;
+    this.pulse = 0;
+    this.lastBeat = -Infinity;
+    this.upcoming = [];
+    this.lastPhrase = -Infinity;
     this.reveal = 0;
     this.tone = 'dark';
     this.passing = null;
@@ -343,8 +360,8 @@ class Outlook {
       sun: { value: new THREE.Vector3(1, 0, 0) },
       eye: { value: new THREE.Vector3(0, 0, 3) },
       playing: { value: new THREE.Vector3(0, 0, 1) },
-      rings: { value: new Array(6).fill(0) },
-      level: { value: 0 },
+      rings: { value: Array.from({ length: 6 }, () => new THREE.Vector2()) },
+      glow: { value: 0 },
     };
     // The ground at twice the detail, from NASA, once the page is up; the bundled one stays if it cannot be had.
     setTimeout(() => {
@@ -367,7 +384,7 @@ class Outlook {
       new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: SPHERE_VERTEX, fragmentShader: AIR_FRAGMENT, side: THREE.BackSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
 
-    this.markUniforms = { dpr: { value: 1 }, zoom: { value: 1 }, time: { value: 0 }, stations: { value: 1 }, sunWorld: { value: new THREE.Vector3() } };
+    this.markUniforms = { dpr: { value: 1 }, zoom: { value: 1 }, time: { value: 0 }, stations: { value: 1 }, beat: { value: 0 }, sunWorld: { value: new THREE.Vector3() } };
     const markMaterial = new THREE.ShaderMaterial({ uniforms: this.markUniforms, vertexShader: MARK_VERTEX, fragmentShader: MARK_FRAGMENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
     const lights = new THREE.BufferGeometry();
     lights.setAttribute('position', new THREE.Float32BufferAttribute(this.vectors.flatMap((v) => v.map((x) => x * 1.002)), 3));
@@ -558,10 +575,51 @@ class Outlook {
     return best;
   }
 
-  swell(strength) {
+  /** A ring leaves the playing station: reach in radians across the Earth, life in seconds. */
+  ring(reach, life, strength, start = performance.now()) {
     if (this.reduced) return;
-    this.rings.push({ r: 0.002, s: strength });
+    this.rings.push({ start, reach, life: life * 1000, strength });
     if (this.rings.length > 6) this.rings.shift();
+  }
+
+  /** The first sound from a station: one wide, slow ring. */
+  arrival() {
+    this.ring(0.42, 3.4, 0.9);
+  }
+
+  /** Turns the sound of this frame into motion, each layer at its own speed:
+      the beat a small ring and the point's lift, the bar a wider ring that lights the towns it
+      crosses, the phrase a slow warmth. Music without a steady pulse gets only the phrase, and a
+      slow ring when a strong accent stands out. */
+  listen(sound, now, dt) {
+    const sustain = sound?.sustain ?? 0;
+    this.phrase += (sustain - this.phrase) * Math.min(1, dt / 1.5);
+    if (!sound || this.reduced) {
+      this.pulse *= Math.exp(-dt / 0.3);
+      this.upcoming.length = 0;
+      return;
+    }
+    // Beats arrive a little ahead of when they are heard; each is drawn at its moment.
+    if (sound.locked) this.upcoming.push(...sound.beats);
+    else this.upcoming.length = 0;
+    while (this.upcoming.length && this.upcoming[0].at <= now) {
+      const beat = this.upcoming.shift();
+      const period = beat.period;
+      this.lastBeat = beat.at;
+      this.beatLength = period * 1000;
+      // The less sure the beat, the less is drawn: the bar first, every beat only when it is clear.
+      if (beat.downbeat) this.ring(0.3, period * 4, 0.75 * beat.strength + 0.25, beat.at);
+      else if (sound.confidence > 0.38) this.ring(0.07, period * 1.6, 0.3 * beat.strength + 0.1, beat.at);
+    }
+    if (!sound.locked && sound.accent > 0.55 && now - this.lastPhrase > 5000) {
+      this.lastPhrase = now;
+      this.ring(0.34, 4.2, 0.5);
+    }
+    // The beat envelope: sharp at the beat, gone by the next. Without a pulse, the slow breath.
+    const sure = clamp((sound.confidence - 0.2) / 0.25, 0, 1);
+    this.pulse = sound.locked
+      ? Math.max(0, Math.exp(-(now - this.lastBeat) / (0.22 * (this.beatLength ?? 500)))) * (0.35 + 0.65 * sure)
+      : 0.25 + 0.25 * Math.sin((now / 1000) * ((2 * Math.PI) / 7));
   }
 
   /* Turning it by hand ------------------------------------------------------------------- */
@@ -708,9 +766,8 @@ class Outlook {
   frame(now, dt, sound) {
     const light = lightAt(this.place);
     if (!this.ok) return light;
-    this.level += ((sound?.level ?? 0) - this.level) * Math.min(1, dt * 10);
-    for (const ring of this.rings) ring.r += dt * (0.09 + ring.r * 0.4);
-    this.rings = this.rings.filter((ring) => ring.r < 0.55);
+    this.listen(sound, now, dt);
+    this.rings = this.rings.filter((ring) => now - ring.start < ring.life);
     this.step(now, dt);
     this.render(now);
     return light;
@@ -789,14 +846,21 @@ class Outlook {
     const u = this.uniforms;
     u.sun.value.set(...sun);
     u.eye.value.copy(this.globe.worldToLocal(this.camera.position.clone()));
-    u.level.value = this.level;
+    u.glow.value = this.phrase;
     u.cloudShift.value = (now / 1000) * 0.000004;
     if (this.current !== undefined) u.playing.value.set(...this.vectors[this.current]);
-    u.rings.value = Array.from({ length: 6 }, (_, k) => this.rings[k]?.r ?? 0);
+    // Each ring eases out from the station and fades as it goes.
+    u.rings.value.forEach((v, k) => {
+      const ring = this.rings[k];
+      if (!ring) return v.set(0, 0);
+      const t = clamp((now - ring.start) / ring.life, 0, 1);
+      v.set(ring.reach * (1 - (1 - t) ** 2.4), ring.strength * (1 - t) ** 1.4);
+    });
     const sunWorld = new THREE.Vector3(...sun).applyQuaternion(this.globe.quaternion);
     this.sun.position.copy(sunWorld).multiplyScalar(180);
     this.markUniforms.sunWorld.value.copy(sunWorld);
     this.markUniforms.time.value = now / 1000;
+    this.markUniforms.beat.value = this.pulse;
     this.markUniforms.zoom.value = clamp(Math.sqrt(v.zoom / REST), 0.8, 1.9);
     this.markUniforms.stations.value = this.wander || this.journey ? 0.55 : 1;
     this.needle.visible = this.needleShown > 0.01;

@@ -2,14 +2,14 @@
    that arrives is measured so the sea can answer it. Streams that allow cross-origin reading
    go through an analyser; the others play directly and the sea breathes on its own. */
 const SCORES = {
-  // Ring speed in radians per second, how long a ring waits before the next, and how the glow follows.
-  electronic: { speed: 0.62, spacing: 0.2, rise: 0.25, release: 0.3 },
-  jazz: { speed: 0.42, spacing: 0.24, rise: 0.5, release: 0.8 },
-  classical: { speed: 0.26, spacing: 0.5, rise: 1.1, release: 1.6 },
-  plain: { speed: 0.45, spacing: 0.26, rise: 0.6, release: 0.5 },
+  // How the phrase-level glow follows loudness: seconds to rise, seconds to fall.
+  electronic: { rise: 1.2, release: 2.2 },
+  jazz: { rise: 1.8, release: 3.5 },
+  classical: { rise: 3, release: 6 },
+  plain: { rise: 1.8, release: 3.5 },
 };
 
-/** The movement vocabulary a station's genres suggest. */
+/** How slowly the glow should follow the music, from the station's genres. */
 function scoreFor(station) {
   const g = station.genres.join(' ');
   if (/Classical|Opera|Early music|Ambient/.test(g)) return SCORES.classical;
@@ -29,6 +29,7 @@ class Receiver {
     this.bins = new Uint8Array(512);
     this.previous = new Uint8Array(512);
     this.wave = new Float32Array(1024);
+    this.pulse = new Pulse();
     this.resetEnvelope();
   }
 
@@ -59,6 +60,19 @@ class Receiver {
     this.streamGain.gain.value = 0;
     this.context.createMediaElementSource(this.tapped).connect(this.analyser);
     this.analyser.connect(this.streamGain);
+    // Onsets are found on the audio thread where it can be had; otherwise from the analyser, per frame.
+    this.onsetQueue = [];
+    this.context.audioWorklet
+      ?.addModule('onset-worklet.js')
+      .then(() => {
+        const node = new AudioWorkletNode(this.context, 'onsets', { numberOfOutputs: 1 });
+        node.port.onmessage = (e) => this.onsetQueue.push(e.data);
+        const mute = this.context.createGain();
+        mute.gain.value = 0;
+        this.analyser.connect(node).connect(mute).connect(this.context.destination);
+        this.worklet = node;
+      })
+      .catch(() => {});
     this.streamGain.connect(this.master);
     this.static = new Static(this.context, this.master);
   }
@@ -119,6 +133,13 @@ class Receiver {
     } else {
       fadeElement(this.plain, this.volume, 700);
     }
+  }
+
+  /** The page's clock time at which a moment of the audio's timeline comes out of the speakers. */
+  heardAt(audioTime) {
+    const stamp = this.context.getOutputTimestamp?.();
+    if (stamp?.performanceTime) return stamp.performanceTime + (audioTime - stamp.contextTime) * 1000;
+    return performance.now() + (audioTime - this.context.currentTime + (this.context.outputLatency || this.context.baseLatency || 0)) * 1000;
   }
 
   /** Fades the stream out and stops it. */
@@ -182,24 +203,25 @@ class Receiver {
     this.sustain = 0;
     this.fluxFloor = 0;
     this.lowFloor = 0;
-    this.refractory = 0;
     this.sampled = false;
     this.breath = 0;
     this.previous.fill(0);
+    this.pulse.reset();
+    if (this.onsetQueue) this.onsetQueue.length = 0;
   }
 
-  /** Measures the last moment of sound. A hit is a fresh attack: a kick, a chord, a voice. */
+  /** Measures the last moment of sound, at three speeds: the level now, the beat (from the
+      pulse tracker), and the phrase (a slow envelope of loudness). */
   sample(seconds) {
     const dt = clamp(seconds, 0.012, 0.15);
-    if (!this.arrived) return { level: 0, sustain: 0, hit: 0 };
+    if (!this.arrived) return null;
     const score = this.score;
     if (!this.analysed) {
-      // Without access to the samples, the station breathes at a slow, even pace.
+      // Without the samples there is no beat to follow, and none is invented: the station only
+      // breathes, slowly.
       this.breath += dt;
-      const hit = this.breath > 2.6 ? ((this.breath = 0), 0.35) : 0;
-      this.level += (0.25 - this.level) * dt;
-      this.sustain += (0.3 - this.sustain) * dt * 0.5;
-      return { level: this.level, sustain: this.sustain, hit, score };
+      this.sustain = 0.32 + 0.1 * Math.sin((this.breath * 2 * Math.PI) / 9);
+      return { level: 0.3, sustain: this.sustain, beats: [], locked: false, accent: 0 };
     }
     this.analyser.getByteFrequencyData(this.bins);
     this.analyser.getFloatTimeDomainData(this.wave);
@@ -220,20 +242,27 @@ class Receiver {
     for (let i = 1; i < lowEnd; i++) lowFlux += Math.max(0, this.bins[i] - this.previous[i]);
     lowFlux /= 255 * (lowEnd - 1);
     const onset = this.sampled && level > 0.018 ? clamp((flux - this.fluxFloor * 1.5 - 0.007) * 14, 0, 1) : 0;
-    const bass = this.sampled && rms > 0.004 ? Math.max(0, (lowFlux - this.lowFloor * 1.55 - 0.012) * 5.6) : 0;
-    const accent = Math.min(1, Math.max(onset, bass));
+    const bass = this.sampled && rms > 0.004 ? clamp((lowFlux - this.lowFloor * 1.55 - 0.012) * 5.6, 0, 1) : 0;
     this.fluxFloor += (flux - this.fluxFloor) * (1 - Math.exp(-dt / 0.55));
     this.lowFloor += (lowFlux - this.lowFloor) * (1 - Math.exp(-dt / 0.65));
-    this.refractory = Math.max(0, this.refractory - dt);
-    let hit = 0;
-    if (accent > 0.12 && this.refractory === 0) {
-      hit = 0.3 + 0.7 * accent;
-      this.refractory = score.spacing;
-    }
     this.sustain += (this.level - this.sustain) * (1 - Math.exp(-dt / (this.level > this.sustain ? score.rise : score.release)));
     this.previous.set(this.bins);
     this.sampled = true;
-    return { level: this.level, sustain: this.sustain, hit, score };
+    const beats = [];
+    let accent = Math.max(onset, bass);
+    if (this.worklet) {
+      // Every block the audio thread measured since the last frame, in the music's own time;
+      // each beat is stamped with the moment it will be heard.
+      for (const block of this.onsetQueue.splice(0)) {
+        accent = Math.max(accent, block.onset, block.bass);
+        const beat = this.pulse.step(block.onset, block.bass, block.seconds);
+        if (beat) beats.push({ ...beat, at: this.heardAt(block.time) });
+      }
+    } else {
+      const beat = this.pulse.step(onset, bass, dt);
+      if (beat) beats.push({ ...beat, at: performance.now() });
+    }
+    return { level: this.level, sustain: this.sustain, beats, locked: this.pulse.locked && this.sustain > 0.06, confidence: this.pulse.confidence, accent };
   }
 }
 
