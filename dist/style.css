@@ -76,13 +76,6 @@ h1 em {
     serif;
   letter-spacing: -0.035em;
 }
-.fm {
-  align-self: start;
-  font:
-    10px ui-monospace,
-    monospace;
-  letter-spacing: 0.06em;
-}
 .brand-cn {
   margin-left: 8px;
   padding-left: 17px;

@@ -1,12 +1,12 @@
-# Aether FM — World Music Radio
+# strayhum — World Music Radio
 
 The globe carries one city caption. A tap finds music at the closest visible location. During playback, the station supplies the energy that changes the colour around its city.
 
 ## Research and design decisions
 
-ART+COM's *Manta Rhei* coordinates light with the movement of a physical object. Aether carries its pigment field in geographical coordinates, so it turns with the globe and the coastline stays legible. [ART+COM — Manta Rhei](https://artcom.de/?project=manta-rhei)
+ART+COM's *Manta Rhei* coordinates light with the movement of a physical object. strayhum carries its pigment field in geographical coordinates, so it turns with the globe and the coastline stays legible. [ART+COM — Manta Rhei](https://artcom.de/?project=manta-rhei)
 
-Semiconductor's *Brilliant Noise* maps changes in image brightness to sound. Aether takes the reverse path. A measured rise in bass or broadband energy pushes the edge of a translucent sheet across the station. A damped spring shapes its release. The catalog’s primary family and descriptive tags select the movement. Electronic stations use a narrow, fast pleat. Jazz uses a delayed lateral return. Classical uses a broad arc driven by the sustained envelope. Other formats keep the baseline response. Sustained energy shifts the surrounding colour, and a quiet passage lets it settle. [Semiconductor — Brilliant Noise](https://semiconductorfilms.com/art/brilliant-noise/)
+Semiconductor's *Brilliant Noise* maps changes in image brightness to sound. strayhum takes the reverse path. A measured rise in bass or broadband energy pushes the edge of a translucent sheet across the station. A damped spring shapes its release. The catalog’s primary family and descriptive tags select the movement. Electronic stations use a narrow, fast pleat. Jazz uses a delayed lateral return. Classical uses a broad arc driven by the sustained envelope. Other formats keep the baseline response. Sustained energy shifts the surrounding colour, and a quiet passage lets it settle. [Semiconductor — Brilliant Noise](https://semiconductorfilms.com/art/brilliant-noise/)
 
 The listener can explore freely while a station plays. One city name appears under the pointer. The local time, frequency and playback controls belong to the player, leaving the globe free of persistent station markers. [Ryoji Ikeda — datamatics](https://www.ryojiikeda.com/project/datamatics/)
 
