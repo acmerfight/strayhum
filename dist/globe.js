@@ -9,6 +9,9 @@ class RadioGlobe {
       stations.findIndex((s) => s.id === "fip"),
     );
     const station = stations[this.selected];
+    this.score = scoreForStation(station);
+    this.shape = new Float32Array(this.score.shape);
+    this.trail = 0;
     this.lon = station.lon + 16;
     this.lat = station.lat - 19;
     this.zoom = 1;
@@ -186,14 +189,24 @@ class RadioGlobe {
       const push = this.flowPush,
         travel = this.flowTravel;
       const extent = this.radius * (0.21 + 0.13 * this.hold);
-      const offset = this.radius * (0.26 * push + 0.065 * Math.sin(travel));
+      const [snap, swing, sweep] = this.shape;
+      const offset =
+        this.radius *
+        ((0.26 + 0.1 * snap - 0.17 * sweep) * push +
+          (0.065 + 0.06 * swing) * Math.sin(travel) +
+          0.24 * sweep * this.hold);
+      const side = this.radius * swing * (this.trail - push) * 0.32;
       c.save();
       c.beginPath();
       c.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
       c.clip();
-      c.translate(x + offset * 0.85, y - offset * 0.5);
-      c.rotate(-0.51 + 0.14 * Math.sin(travel));
-      c.scale(1.5, 0.82);
+      c.translate(x + offset * 0.85 + side, y - offset * 0.5 + side * 0.45);
+      c.rotate(
+        -0.51 +
+          (0.14 + 0.25 * swing) * Math.sin(travel) +
+          0.3 * sweep * this.hold,
+      );
+      c.scale(1.5 + 0.48 * sweep, 0.82 - 0.32 * snap + 0.17 * sweep);
       const halo = c.createRadialGradient(0, 0, 0, 0, 0, extent);
       halo.addColorStop(0, "rgba(110,184,178,.08)");
       halo.addColorStop(0.58, "rgba(197,218,196," + (0.12 + 0.26 * push) + ")");
@@ -299,13 +312,26 @@ class RadioGlobe {
         const delta = last ? Math.min(80, now - last) / 1000 : 0;
         last = now;
         const responsive = this.listening && this.signal?.analyser;
-        const measured = responsive ? this.signal.sample(delta) : null;
+        const measured = responsive
+          ? this.signal.sample(delta, this.score)
+          : null;
         this.flowPush = responsive
           ? this.signal.displacement
           : this.flowPush * Math.exp(-delta * 5);
+        for (let i = 0; i < 3; i++)
+          this.shape[i] +=
+            (this.score.shape[i] - this.shape[i]) *
+            (1 - Math.exp(-delta / 0.38));
+        this.trail +=
+          (this.flowPush - this.trail) * (1 - Math.exp(-delta / 0.31));
+        const [snap, swing, sweep] = this.shape;
         this.flowTravel +=
           delta *
-          (2.85 * this.flowPush + (responsive ? this.signal.level * 0.4 : 0));
+          ((2.85 - 1.85 * snap - 2.1 * sweep) * this.flowPush +
+            (responsive
+              ? this.signal.level * (0.4 + 0.27 * swing) +
+                this.signal.sustain * 0.72 * sweep
+              : 0));
         this.strike = responsive ? this.signal.attack : 0;
         this.hold = responsive ? this.signal.sustain : 0;
         this.loudness = responsive ? this.signal.level : 0;
@@ -373,6 +399,8 @@ class RadioGlobe {
       : this.stationRoute(this.stations[this.selected], this.stations[i]);
     this.hover(null);
     this.selected = i;
+    this.score = scoreForStation(this.stations[i]);
+    if (this.reduced) this.shape.set(this.score.shape);
     this.refreshWaves();
     const target = this.stations[i],
       start = performance.now(),

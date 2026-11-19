@@ -1,3 +1,53 @@
+// The station chooses the movement vocabulary. Measured sound supplies its timing.
+const motionScores = {
+  default: {
+    shape: [0, 0, 0],
+    damping: 6.7,
+    impulse: 1,
+    spacing: 0.165,
+    rise: 0.6,
+    release: 0.36,
+  },
+  electronic: {
+    shape: [1, 0, 0],
+    damping: 17,
+    impulse: 2.7,
+    spacing: 0.115,
+    rise: 0.22,
+    release: 0.19,
+  },
+  jazz: {
+    shape: [0, 1, 0],
+    damping: 4.7,
+    impulse: 0.68,
+    spacing: 0.155,
+    rise: 0.48,
+    release: 0.72,
+  },
+  classical: {
+    shape: [0, 0, 1],
+    damping: 2.8,
+    impulse: 0.22,
+    spacing: 0.26,
+    rise: 1.05,
+    release: 1.55,
+  },
+};
+function scoreForStation(station) {
+  const families = {
+    Electronic: "electronic",
+    "Jazz & soul": "jazz",
+    Classical: "classical",
+  };
+  if (families[station.family]) return motionScores[families[station.family]];
+  const tags = [station.genre, ...(station.genres || [])].join(" ");
+  if (/\b(classical|opera|baroque|orchestral|symphonic)\b/i.test(tags))
+    return motionScores.classical;
+  if (/\b(jazz|bebop|swing)\b/i.test(tags)) return motionScores.jazz;
+  if (/\b(electronic|techno|house|trance|dubstep|edm)\b/i.test(tags))
+    return motionScores.electronic;
+  return motionScores.default;
+}
 /* One live media graph per station. Direct playback remains available if a host declines CORS. */
 class LiveSignal {
   constructor() {
@@ -41,7 +91,7 @@ class LiveSignal {
     this.bands.fill(0);
     this.resetEnvelope();
   }
-  sample(seconds = 1 / 30) {
+  sample(seconds = 1 / 30, score = motionScores.default) {
     if (!this.analyser) return this.bands;
     this.analyser.getByteFrequencyData(this.bins);
     this.analyser.getFloatTimeDomainData(this.wave);
@@ -79,11 +129,14 @@ class LiveSignal {
     this.lowFloor += (lowFlux - this.lowFloor) * (1 - Math.exp(-dt / 0.65));
     this.refractory = Math.max(0, this.refractory - dt);
     if (accent > 0.105 && this.refractory === 0) {
-      this.velocity = Math.min(15, this.velocity + 4.2 + accent * 10.2);
-      this.refractory = 0.165;
+      this.velocity = Math.min(
+        15 * score.impulse,
+        this.velocity + (4.2 + accent * 10.2) * score.impulse,
+      );
+      this.refractory = score.spacing;
     }
     // Exact critically damped spring: a fast push followed by a smooth release.
-    const damping = 6.7,
+    const damping = score.damping,
       slope = this.velocity + damping * this.displacement;
     const decay = Math.exp(-damping * dt);
     this.displacement = (this.displacement + slope * dt) * decay;
@@ -92,7 +145,10 @@ class LiveSignal {
     this.fluxFloor += (flux - this.fluxFloor) * (1 - Math.exp(-dt / 0.55));
     this.sustain +=
       (this.level - this.sustain) *
-      (1 - Math.exp(-dt / (this.level > this.sustain ? 0.6 : 0.36)));
+      (1 -
+        Math.exp(
+          -dt / (this.level > this.sustain ? score.rise : score.release),
+        ));
     this.previous.set(this.bins);
     this.sampled = true;
     const ranges = [
