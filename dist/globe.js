@@ -19,7 +19,17 @@ class RadioGlobe {
     this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.onSelect = onSelect;
     this.caption = document.querySelector("#surface-caption");
-    this.caption.onclick = () => this.choose(this.hovered ?? this.selected);
+    this.previewCity = null;
+    this.caption.onclick = (e) => {
+      const i = this.previewCity ?? this.hovered ?? this.selected;
+      if (
+        e.detail &&
+        (this.mobile || e.pointerType === "touch") &&
+        this.previewCity === null
+      )
+        this.preview(i);
+      else this.choose(i);
+    };
     this.hovered = null;
     this.cityMembers = new Map();
     for (const [i, s] of stations.entries()) {
@@ -138,8 +148,13 @@ class RadioGlobe {
     this.hovered = i;
     this.drawCaption();
   }
+  preview(i) {
+    this.previewCity = i;
+    this.hovered = null;
+    this.drawCaption();
+  }
   drawCaption() {
-    const i = this.hovered ?? this.selected,
+    const i = this.previewCity ?? this.hovered ?? this.selected,
       s = this.stations[i];
     const [x, y, z] = this.project(s.lat, s.lon);
     const el = this.caption;
@@ -147,21 +162,34 @@ class RadioGlobe {
     if (el.hidden) return;
     const discovering = this.hovered !== null;
     const count = this.cityMembers.get(this.cityKey(s)).length;
-    const label = s.city + (discovering && count > 1 ? " · " + count : "");
+    const preview = this.previewCity !== null;
+    const label =
+      s.city + (!preview && discovering && count > 1 ? " · " + count : "");
+    const action = preview ? (count > 1 ? count + " stations" : "Play") : "";
+    if (el.dataset.action !== action) el.dataset.action = action;
     if (el.textContent !== label) el.textContent = label;
     const description =
-      count > 1
-        ? "Browse " + count + " stations in " + s.city
-        : "Play " + s.name + " in " + s.city;
+      this.mobile && !preview
+        ? "Explore " + s.city
+        : count > 1
+          ? "Browse " + count + " stations in " + s.city
+          : "Play " + s.name + " in " + s.city;
     if (el.getAttribute("aria-label") !== description)
       el.setAttribute("aria-label", description);
     el.classList.toggle("discovering", discovering);
-    el.classList.toggle("inward", x > this.w - Math.min(170, this.w * 0.3));
+    if (preview) {
+      el.style.maxWidth = Math.max(90, Math.max(x, this.w - x) - 32) + "px";
+      el.classList.toggle("inward", x + el.offsetWidth + 25 > this.w);
+    } else {
+      el.style.maxWidth = "";
+      el.classList.toggle("inward", x > this.w - Math.min(170, this.w * 0.3));
+    }
     el.style.left = x + "px";
     el.style.top = y + "px";
   }
   choose(i) {
     if (i === null) return;
+    this.preview(null);
     const members = this.cityMembers.get(this.cityKey(this.stations[i]));
     this.hover(null);
     if (members.length === 1) this.onSelect(i);
@@ -363,7 +391,7 @@ class RadioGlobe {
             ? Math.min(1, this.loudness * 7) * (0.27 + this.hold * 1.7)
             : this.listening
               ? 0.22
-              : 0.54);
+              : 0.075);
         this.tint +=
           (((this.selected * 0.618) % 1) - this.tint) *
           Math.min(1, delta * 1.5);
@@ -408,7 +436,7 @@ class RadioGlobe {
     this.journey = this.reduced
       ? null
       : this.stationRoute(this.stations[this.selected], this.stations[i]);
-    this.hover(null);
+    this.preview(null);
     this.selected = i;
     this.score = scoreForStation(this.stations[i]);
     if (this.reduced) this.shape.set(this.score.shape);
@@ -496,9 +524,8 @@ class RadioGlobe {
       )
         return;
       tapOrigin = null;
+      if (this.previewCity !== null) this.preview(null);
       this.hover(null);
-      this.exploring = true;
-      this.onExplore?.();
       pointers.set(e.pointerId, [e.clientX, e.clientY]);
       if (pointers.size === 2) {
         const distance = pairDistance();
@@ -514,6 +541,10 @@ class RadioGlobe {
         vy = 0.55 * vy + (0.45 * dy) / dt;
         lastMove = now;
         this.rotate(this.lon + dx, this.lat + dy);
+        if ((dx || dy) && this.onFirstOrbit) {
+          this.onFirstOrbit();
+          this.onFirstOrbit = null;
+        }
         anchor = [e.clientX, e.clientY];
       }
     };
@@ -524,13 +555,11 @@ class RadioGlobe {
         Math.hypot(e.clientX - tapOrigin[0], e.clientY - tapOrigin[1]) < 6;
       tapOrigin = null;
       pointers.delete(e.pointerId);
-      if (!pointers.size && this.exploring) {
-        this.exploring = false;
-        this.onExplore?.();
-      }
       reset();
       if (tapped) {
-        this.choose(pick(e));
+        const i = pick(e);
+        if (this.mobile || e.pointerType === "touch") this.preview(i);
+        else this.choose(i);
         return;
       }
       if (pointers.size || this.reduced || performance.now() - lastMove > 75)
@@ -552,16 +581,11 @@ class RadioGlobe {
     canvas.onpointercancel = canvas.onlostpointercapture = (e) => {
       tapOrigin = null;
       pointers.delete(e.pointerId);
-      if (!pointers.size && this.exploring) {
-        this.exploring = false;
-        this.onExplore?.();
-      }
       reset();
     };
     canvas.onwheel = (e) => {
       e.preventDefault();
-      this.onExplore?.();
-      this.hover(null);
+      this.preview(null);
       this.scale(Math.exp(-Math.sign(e.deltaY) * 0.055));
     };
     canvas.onkeydown = (e) => {
@@ -574,17 +598,19 @@ class RadioGlobe {
       if (keys[e.key]) {
         e.preventDefault();
         this.cancelFlight();
-        this.onExplore?.();
+        this.preview(null);
         this.rotate(this.lon + keys[e.key][0], this.lat + keys[e.key][1]);
         this.hover(this.nearest(this.cx, this.cy));
         document.getElementById("keyboard-city").textContent =
           this.caption.getAttribute("aria-label");
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        this.choose(this.hovered ?? this.nearest(this.cx, this.cy));
+        this.choose(
+          this.previewCity ?? this.hovered ?? this.nearest(this.cx, this.cy),
+        );
       } else if (["+", "=", "-"].includes(e.key)) {
         e.preventDefault();
-        this.onExplore?.();
+        this.preview(null);
         this.scale(e.key === "-" ? 0.9 : 1.1);
       }
     };

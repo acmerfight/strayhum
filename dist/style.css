@@ -983,3 +983,77 @@ body:not([data-scene="listening"]) #credit {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+#motion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 16px;
+  font-size: 12px;
+}
+#motion svg {
+  width: 16px;
+  height: 16px;
+}
+#motion[aria-pressed="false"] {
+  color: #cba985;
+}
+#next:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+#orbit-hint {
+  transition: opacity 0.55s ease;
+}
+#orbit-hint.learned {
+  opacity: 0;
+}
+#surface-caption[data-action]:not([data-action=""]) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px;
+  gap: 7px;
+  border-radius: 5px;
+  background: #12151edb;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#surface-caption[data-action]:not([data-action=""])::after {
+  content: attr(data-action);
+  font: 12px system-ui;
+  color: #f4d59f;
+  white-space: nowrap;
+}
+#surface-caption[hidden] {
+  display: none !important;
+}
+@media (max-width: 700px), (max-aspect-ratio: 4/5) {
+  .transport #next {
+    width: 44px;
+    height: 44px;
+  }
+  footer {
+    gap: 8px;
+    font-size: 11px;
+  }
+  footer .clock-label {
+    display: none;
+  }
+  footer .local {
+    white-space: nowrap;
+    margin-left: auto;
+  }
+  #motion {
+    padding: 0 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #orbit-hint {
+    transition: none;
+  }
+}

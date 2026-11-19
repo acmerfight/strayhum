@@ -46,14 +46,13 @@ function setState(s) {
       ? 0
       : Math.max(0, (globe.flightEnd || 0) - performance.now());
     sceneTimer = setTimeout(() => {
-      if (state === "playing" && !globe.exploring) showIdentity(true);
+      if (state === "playing") showIdentity(true);
     }, remaining);
     credit.follow(STATIONS[index].id);
   } else if (s !== "playing") {
     clearTimeout(sceneTimer);
     credit.clear();
-    // A short rebuffer keeps the listening layout. A new selection explicitly resets it.
-    if (s !== "connecting") showIdentity(false);
+    // The last station stays identifiable during pauses and short rebuffers.
   }
   const running = s === "playing" || s === "connecting";
   $("play").innerHTML = icon(running ? "pause" : "play");
@@ -224,32 +223,46 @@ function display() {
     );
 }
 setInterval(updateClock, 15000);
-function select(i) {
+const worldQueue = STATIONS.map((_, i) => i);
+let playQueue = worldQueue;
+function select(i, queue = playQueue, scope) {
+  playQueue = queue;
+  $("next").disabled = queue.length < 2;
+  if (scope !== undefined) {
+    const hint =
+      queue.length === 1
+        ? "Only station in this selection"
+        : "Next station · " + scope;
+    $("next").title = hint;
+    $("next").setAttribute("aria-description", hint);
+  }
+  if (i === index && (state === "playing" || state === "connecting")) return;
+  if (i === index) {
+    tune();
+    return;
+  }
   index = i;
   globe.focus(i);
   display();
   tune();
 }
-const globe = new RadioGlobe(STATIONS, select);
+const globe = new RadioGlobe(STATIONS, (i) =>
+  select(i, worldQueue, "World directory"),
+);
 globe.signal = live;
-globe.onExplore = () => {
-  if (state !== "playing") return;
-  clearTimeout(sceneTimer);
-  showIdentity(false);
-  if (!globe.exploring) {
-    sceneTimer = setTimeout(() => {
-      if (state === "playing") showIdentity(true);
-    }, 1000);
-  }
+globe.onFirstOrbit = () => {
+  $("orbit-hint").classList.add("learned");
+  $("orbit-hint").setAttribute("aria-hidden", "true");
 };
 function motionUI() {
   const label = globe.reduced ? "Resume visual motion" : "Pause visual motion";
-  $("motion").setAttribute("aria-label", label);
+  $("motion").setAttribute("aria-label", "Visual motion");
   $("motion").title = label;
+  $("motion").setAttribute("aria-pressed", String(!globe.reduced));
   $("motion").innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M2 12c3-10 4 11 7 0s4 11 7 0 4 3 6 0"/>' +
     (globe.reduced ? '<path d="M3 21 21 3"/>' : "") +
-    "</svg>";
+    "</svg><span>Motion</span>";
 }
 $("motion").onclick = () => {
   globe.setReduced(!globe.reduced);
@@ -304,9 +317,8 @@ function matchesFilters(s) {
 }
 $("play").onclick = toggle;
 $("next").onclick = () => {
-  const picks = stationIndex.filter(({ s }) => matchesFilters(s));
-  const current = picks.findIndex((p) => p.i === index);
-  if (picks.length) select(picks[(current + 1) % picks.length].i);
+  if (playQueue.length > 1)
+    select(playQueue[(playQueue.indexOf(index) + 1) % playQueue.length]);
 };
 let area = null;
 globe.onCluster = (members) => {
@@ -385,7 +397,19 @@ function appendResults() {
     row.querySelector("small").textContent = s.city + ", " + s.country;
     row.querySelector(".smeta").textContent = s.genre;
     row.onclick = () => {
-      select(i);
+      const scope = [
+        area ? s.city : "",
+        country.value,
+        family.value,
+        $("search").value.trim(),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      select(
+        i,
+        results.map((item) => item.i),
+        scope || "World directory",
+      );
       picker.close();
     };
     row.classList.toggle("active", i === index);

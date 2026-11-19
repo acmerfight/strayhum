@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#090a0e" />
     <title>Aether FM — World Music Radio</title>
-    <link rel="stylesheet" href="style.css?v=opal-2" />
+    <link rel="stylesheet" href="style.css?v=interaction-2" />
     <script defer src="stations.js?v=world-2"></script>
     <script defer src="world-stations.js?v=world-2"></script>
     <script defer src="print.js?v=passage-1"></script>
-    <script defer src="globe.js?v=passage-1"></script>
+    <script defer src="globe.js?v=interaction-2"></script>
     <script defer src="audio.js?v=passage-1"></script>
     <script defer src="track.js"></script>
-    <script defer src="app.js?v=world-2"></script>
+    <script defer src="app.js?v=interaction-2"></script>
   </head>
   <body>
     <header>
@@ -24,7 +24,7 @@
       <div class="tools">
         <button
           id="motion"
-          aria-label="Pause visual motion"
+          aria-label="Visual motion"
           title="Pause visual motion"
         ></button
         ><button id="browse" aria-label="Browse music stations">
@@ -79,9 +79,10 @@
         </div>
       </section>
       <footer>
-        <span>Drag to orbit <i>·</i> Tap the globe to find music</span
+        <span id="orbit-hint">Drag to turn <i>·</i> Tap a city</span
         ><span class="local"
-          ><span id="clock-place"></span> local time <time id="clock"></time
+          ><span id="clock-place"></span>
+          <span class="clock-label">local time </span><time id="clock"></time
         ></span>
       </footer>
     </main>
