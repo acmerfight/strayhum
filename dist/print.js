@@ -21,57 +21,67 @@ class SignalSphere {
     const fragment = `precision highp float;
       uniform sampler2D plate;
       uniform vec2 center; uniform float height, radius, lat, lon;
-      uniform vec3 energy, beacon, phrase;uniform float firstLight;uniform float phase, arrival, tint;
+      uniform vec3 energy, beacon, phrase;uniform float firstLight;uniform float phase, tint;
+      uniform vec2 pulse;
+      // A continuous three-dimensional pigment field stays attached to the globe.
+      float hash(vec3 p) { p=fract(p*.3183099+vec3(.17,.29,.43)); p*=17.; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+      float noise3(vec3 p) {
+        vec3 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+        return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),
+                       mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+                   mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),
+                       mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
+      }
       void main(){
-        vec2 p=(vec2(gl_FragCoord.x,height-gl_FragCoord.y)-center)/radius;p.y=-p.y;
+        vec2 p=(vec2(gl_FragCoord.x,height-gl_FragCoord.y)-center)/radius; p.y=-p.y;
         float d=length(p);
         if(d>=1.){gl_FragColor=vec4(0.);return;}
         float z=sqrt(1.-d*d);
         float phi=asin(clamp(p.y*cos(lat)+z*sin(lat),-1.,1.));
         float lambda=atan(p.x,z*cos(lat)-p.y*sin(lat))+lon;
-        vec3 cut=texture2D(plate,vec2(fract(lambda/6.2831853+.5),.5-phi/3.14159265)).rgb;
-        // Translucent carrier, dark etching, and two families of folded luminous filaments.
-        vec3 n=vec3(p,z);
-        float edge=pow(1.-z,2.4);
-        float light=clamp(.45+dot(n,normalize(vec3(-.68,.65,.31)))*.5,0.,1.);
-        vec3 cold=mix(vec3(.28,.54,.94),vec3(.32,.84,.74),tint*.48);
-        vec3 warm=mix(vec3(1.,.57,.31),vec3(.94,.40,.64),tint*.65);
-        vec3 pearl=vec3(.97,.92,.81);
-        float t=phase*.22;
-        float drift=.13*sin(t*.8+lambda*1.3)+.06*sin(t*1.13-phi*3.);
-        float fold=phi+.27*sin(lambda*2.+phi*3.+drift)+.105*sin(lambda*4.-phi*5.+t*.4)+.11*sin(lambda-phi*4.);
-        float ridges=pow(.5+.5*cos(fold*157.+sin(lambda*7.+t)*1.6),5.);
-        float fine=pow(.5+.5*cos(fold*328.-3.*t),9.);
-        float lateral=p.x*.72+p.y*.36;
-        float sheen=.5+.5*cos(fold*6.1-lambda*1.8+t*.36+energy.x*.24);
-        vec3 alloy=mix(cold,warm,smoothstep(.23,.79,sheen));
-        alloy=mix(alloy,pearl,.46*pow(sheen,4.));
-        float flare=pow(max(0.,sin(lambda*2.7+phi*3.2+t*.41)),5.);
-        vec3 surface=mix(vec3(.014,.020,.042),vec3(.07,.075,.115),light);
-        surface+=cut.b*(vec3(.045,.055,.085)+alloy*(.065+.16*light));
-        surface+=cut.b*alloy*(ridges*(.33+.58*light)+fine*(.12+.22*energy.z));
-        surface+=cut.r*alloy*.17;
-        surface+=(1.-cut.b)*cut.g*cold*.21;
-        // A slower inner caustic gives the luminous surface a second depth plane.
-        float sheet=p.y+.53*sin(p.x*2.9-z*1.8+t*.45)+.19*p.x;
-        float veil=exp(-abs(sheet)*7.);
-        float furrow=pow(.5+.5*cos(sheet*174.+p.x*4.+t*1.2),7.);
-        surface+=veil*(.08+.38*furrow)*mix(cold,pearl,.3)*(.6+.4*light);
-        surface+=cut.b*flare*alloy*(.10+.38*energy.y);
-        float rimLight=.32+.68*abs(dot(normalize(p+vec2(.001)),vec2(-.84,.54)));
-        surface+=edge*rimLight*mix(cold,warm,.5+.5*lateral)*.76;
-        surface+=pow(1.-z,11.)*pearl*.77;
         vec3 world=vec3(cos(phi)*sin(lambda),sin(phi),cos(phi)*cos(lambda));
-        float separation=acos(clamp(dot(world,beacon),-1.,1.));
-        float distanceToFront=separation-arrival*2.45;
-        float front=exp(-abs(distanceToFront)*8.)*pow(.5+.5*cos(distanceToFront*123.),4.);
-        float gate=smoothstep(0.,.11,arrival)*(1.-smoothstep(.66,1.,arrival));
-        surface+=mix(warm,pearl,.48)*front*gate*(.25+.54*cut.b);
-        float first=separation-firstLight*2.6;
-        float bloom=exp(-abs(first)*11.)*(1.-smoothstep(.52,1.,firstLight));
-        surface+=mix(warm,pearl,.48)*bloom*phrase.z*(.4+.6*cut.b);
-        surface+=alloy*(ridges*.35*phrase.x+veil*.46*phrase.y)*cut.b;
-
+        float land=texture2D(plate,vec2(fract(lambda/6.2831853+.5),.5-phi/3.14159265)).b;
+        float distance=acos(clamp(dot(world,beacon),-1.,1.));
+        float t=phase*.22;
+        float nearSource=exp(-distance*1.6);
+        float attack=pulse.y*exp(-3.*pulse.x);
+        float ink=nearSource*(phrase.y*.23+attack*.19+energy.x*.10);
+        vec3 q=world*1.47+vec3(.85,-.27,.4);
+        vec3 flow=vec3(noise3(q+vec3(.17*t,2.,0.)),
+                       noise3(q+vec3(4.,.12*t,1.7)),
+                       noise3(q+vec3(2.3,5.,.11*t)))-.5;
+        q+=flow*(1.5+ink)+vec3(.05*sin(t),.07*cos(t*.8),.04*sin(t*.7));
+        float pool=noise3(q*1.68+.8*flow);
+        float mist=noise3(q*3.8+pool*1.6);
+        float glaze=.68*pool+.32*mist;
+        vec3 n=vec3(p,z);
+        float daylight=smoothstep(-.65,.96,dot(n,normalize(vec3(-.58,.76,.48))));
+        float edge=pow(1.-z,2.55);
+        vec3 deep=vec3(.037,.048,.113), indigo=vec3(.22,.20,.41);
+        vec3 jade=vec3(.31,.69,.67), opal=vec3(.75,.86,.79);
+        vec3 rose=vec3(.81,.45,.48), amber=vec3(.98,.73,.53);
+        // Overlapping pools have different soft edges, like pigment suspended
+        // beneath glass. No repeating pattern is used on land or sea.
+        float warmth=smoothstep(.39,.69,noise3(q*.92+vec3(4.2,1.4,2.)));
+        vec3 mineral=mix(jade,rose,warmth);
+        vec3 pale=mix(opal,amber,warmth);
+        vec3 pigment=mix(indigo,mineral,smoothstep(.27,.58,glaze));
+        pigment=mix(pigment,pale,smoothstep(.49,.72,glaze)*.88);
+        float front=pulse.x*1.4;
+        vec3 skew=normalize(beacon+vec3(.23,-.16,.14)*pulse.x);
+        float bloom=pulse.y*exp(-pow(abs(acos(clamp(dot(world,skew),-1.,1.))-front)/(.23+.16*pulse.x),2.))*(1.-pulse.x);
+        float voice=nearSource*(.46*phrase.y+.27*phrase.z+.08*energy.z)+bloom*.62;
+        float wake=exp(-pow(abs(distance-firstLight*1.52)/.31,2.))*(1.-firstLight)*phrase.z;
+        pigment=mix(pigment,mix(amber,opal,tint*.48),clamp(voice+wake*.42,0.,.70));
+        vec3 sea=mix(deep,indigo,.14+.29*pool);
+        sea+=mineral*(.055+.19*smoothstep(.43,.80,glaze));
+        vec3 surface=mix(sea,pigment*(.50+.53*daylight),land);
+        // One asymmetrical reflection grazes the dark side and clarifies the silhouette.
+        float grazing=pow(max(0.,dot(n,normalize(vec3(-.73,.60,.32)))),7.);
+        surface+=mix(jade,opal,.54)*grazing*(.09+.17*mist);
+        surface+=mix(indigo,opal,daylight)*edge*(.30+.24*daylight);
+        surface+=pow(1.-z,13.)*mix(rose,opal,daylight)*.54;
+        surface+=pale*(.07*voice+.09*wake);
         gl_FragColor=vec4(surface,clamp((1.-d)*radius,0.,1.));
       }`;
     function compile(type, source) {
@@ -116,8 +126,8 @@ class SignalSphere {
       "lat",
       "lon",
       "phase",
-      "arrival",
       "firstLight",
+      "pulse",
       "phrase",
       "tint",
       "energy",
@@ -157,25 +167,22 @@ class SignalSphere {
         Math.sin(slat),
         Math.cos(slat) * Math.cos(slon),
       );
-      const arrival =
-        view.reduced || !view.arrivalAt
-          ? 1
-          : Math.max(
-              0,
-              Math.min(1, (performance.now() - view.arrivalAt) / 1750),
-            );
       const first =
         view.firstLight && !view.reduced
           ? Math.min(1, (performance.now() - view.firstLight) / 1900)
           : 1;
       g.uniform1f(u.firstLight, first);
+      const pulse = view.pulse;
+      const age = pulse
+        ? Math.min(1, (performance.now() - pulse.at) / 2100)
+        : 1;
+      g.uniform2f(u.pulse, age, pulse?.strength || 0);
       g.uniform3f(
         u.phrase,
         view.strike || 0,
         view.hold || 0,
         Math.min(1, (view.loudness || 0) * 4),
       );
-      g.uniform1f(u.arrival, arrival);
       g.uniform1f(u.phase, view.time || 0);
       g.uniform1f(u.tint, view.tint || 0);
       g.uniform3fv(u.energy, view.energy);
@@ -212,14 +219,22 @@ class SignalSphere {
           1,
           Math.max(0, (-px * 0.67 + py * 0.71 + z * 0.56 + 0.73) / 1.65),
         );
-        const shimmer = 0.5 + 0.5 * Math.sin(a * 6 + b * 2.5),
+        const wx = Math.cos(a) * Math.sin(b),
+          wz = Math.cos(a) * Math.cos(b);
+        const wash =
+          0.5 +
+          0.5 *
+            Math.sin(2.9 * wx + 1.25 * Math.sin(3.1 * wz + Math.sin(a) * 2.2));
+        const warmth = 0.5 + 0.5 * Math.sin(2.2 * wz - wx * 1.4);
+        const land = src[i + 2] / 255,
           rim = (1 - z) ** 3;
-        const e =
-          (src[i] * 0.63 + src[i + 2] * 0.22 + src[i + 1] * 0.1) *
-          (light * 0.6 + 0.4);
-        dst[o] = 8 + e * (0.4 + 0.88 * shimmer) + rim * 115;
-        dst[o + 1] = 10 + e * 0.82 + rim * 141;
-        dst[o + 2] = 19 + e * (1.25 - 0.67 * shimmer) + rim * 170;
+        const value = land * (0.49 + 0.51 * light);
+        dst[o] =
+          14 + wash * 9 + value * (52 + wash * (66 + 85 * warmth)) + rim * 76;
+        dst[o + 1] =
+          17 + wash * 13 + value * (60 + wash * (85 - 27 * warmth)) + rim * 87;
+        dst[o + 2] =
+          34 + wash * 19 + value * (82 + wash * (74 - 43 * warmth)) + rim * 99;
         dst[o + 3] = 255;
       }
     }

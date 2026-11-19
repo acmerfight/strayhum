@@ -5,12 +5,11 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#090a0e" />
     <title>Aether FM — World Music Radio</title>
-    <link rel="stylesheet" href="style.css?v=world-2" />
+    <link rel="stylesheet" href="style.css?v=opal-2" />
     <script defer src="stations.js?v=world-2"></script>
     <script defer src="world-stations.js?v=world-2"></script>
-    <script defer src="print.js"></script>
-    <script defer src="mantle.js"></script>
-    <script defer src="globe.js?v=world-2"></script>
+    <script defer src="print.js?v=opal-2"></script>
+    <script defer src="globe.js?v=opal-2"></script>
     <script defer src="audio.js"></script>
     <script defer src="track.js"></script>
     <script defer src="app.js?v=world-2"></script>
@@ -38,10 +37,15 @@
         <canvas
           id="globe"
           tabindex="0"
-          aria-label="Drag or use the arrow keys to rotate. Scroll, pinch, or use plus and minus to zoom."
+          aria-label="Drag or use the arrow keys to rotate. Press Enter or tap the globe to find music nearby. Scroll, pinch, or use plus and minus to zoom."
         ></canvas
         ><canvas id="waves" aria-hidden="true"></canvas>
-        <div id="pins"></div>
+        <button id="surface-caption" hidden></button>
+        <span
+          class="visually-hidden"
+          id="keyboard-city"
+          aria-live="polite"
+        ></span>
       </div>
       <section class="receiver" aria-label="Radio player">
         <div class="location">
@@ -75,7 +79,7 @@
         </div>
       </section>
       <footer>
-        <span>Drag to orbit <i>·</i> Select a point to explore</span
+        <span>Drag to orbit <i>·</i> Tap the globe to find music</span
         ><span class="local"
           ><span id="clock-place"></span> local time <time id="clock"></time
         ></span>

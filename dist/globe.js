@@ -1,4 +1,4 @@
-/* Orthographic globe. The luminous surface, station buttons and great-circle routes share one rotation. */
+/* Orthographic globe. The luminous surface, surface picking and great-circle routes share one rotation. */
 class RadioGlobe {
   constructor(stations, onSelect) {
     this.canvas = document.querySelector("#globe");
@@ -15,7 +15,16 @@ class RadioGlobe {
     this.rad = Math.PI / 180;
     this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.onSelect = onSelect;
-    this.pins = [];
+    this.caption = document.querySelector("#surface-caption");
+    this.caption.onclick = () => this.choose(this.hovered ?? this.selected);
+    this.hovered = null;
+    this.cityMembers = new Map();
+    for (const [i, s] of stations.entries()) {
+      const key = this.cityKey(s);
+      if (!this.cityMembers.has(key)) this.cityMembers.set(key, []);
+      this.cityMembers.get(key).push(i);
+    }
+    this.pulse = null;
     this.positions = stations.map((s) => {
       const lat = s.lat * this.rad,
         lon = s.lon * this.rad;
@@ -32,7 +41,6 @@ class RadioGlobe {
     this.tint = 0;
     this.sphere = new SignalSphere(this.canvas, () => this.draw());
     this.flightScale = 1;
-    this.waveStart = performance.now();
     this.listening = false;
     this.hold = 0;
     this.strike = 0;
@@ -84,162 +92,110 @@ class RadioGlobe {
     if (!this.radius) return;
     this.sphere.draw(this);
     this.drawWaves(performance.now());
-    this.drawPins();
+    this.drawCaption();
   }
-  drawPins() {
-    // Merge projected stations within a fingertip of each other. Preserve the
-    // current station's position even when it belongs to a larger group.
-    const gap = this.mobile ? 40 : 52;
-    const buckets = new Map(),
-      groups = [];
-    const l = this.lon * this.rad,
+  cityKey(s) {
+    return s.country + "|" + s.city;
+  }
+  // Invert the orthographic projection. The nearest place is measured on
+  // the sphere, so a click near the limb never picks a hidden station.
+  nearest(x, y) {
+    const px = (x - this.cx) / this.radius,
+      py = (this.cy - y) / this.radius;
+    const z2 = 1 - px * px - py * py;
+    if (z2 < 0) return null;
+    const z = Math.sqrt(z2),
+      l = this.lon * this.rad,
       p = this.lat * this.rad;
     const sl = Math.sin(l),
       cl = Math.cos(l),
       sp = Math.sin(p),
       cp = Math.cos(p);
-    const key = (x, y) => x + y * 65536;
-    const add = (i) => {
-      const [ax, ay, az] = this.positions[i];
-      const depth = ax * sl + az * cl;
-      if (ay * sp + depth * cp < 0.09) return;
-      const x = this.cx + this.radius * (ax * cl - az * sl);
-      const y = this.cy - this.radius * (ay * cp - depth * sp);
-      const col = Math.floor(x / gap),
-        row = Math.floor(y / gap);
-      for (let dx = -1; dx <= 1; dx++)
-        for (let dy = -1; dy <= 1; dy++) {
-          const neighbors = buckets.get(key(col + dx, row + dy));
-          if (!neighbors) continue;
-          for (const group of neighbors) {
-            if ((group.x - x) ** 2 + (group.y - y) ** 2 < gap * gap) {
-              group.members.push(i);
-              return;
-            }
-          }
-        }
-      const cell = key(col, row);
-      const group = { x, y, members: [i] };
-      if (!buckets.has(cell)) buckets.set(cell, []);
-      buckets.get(cell).push(group);
-      groups.push(group);
-    };
-    add(this.selected);
-    for (let i = 0; i < this.positions.length; i++)
-      if (i !== this.selected) add(i);
-    groups.forEach(({ x, y, members }, slot) => {
-      let pin = this.pins[slot];
-      if (!pin) {
-        pin = document.createElement("button");
-        pin.className = "pin";
-        pin.append(document.createElement("span"), document.createElement("i"));
-        pin.onclick = () => {
-          const entries = pin.members;
-          if (entries.length === 1) this.onSelect(entries[0]);
-          else this.onCluster(entries);
-        };
-        document.getElementById("pins").append(pin);
-        this.pins.push(pin);
+    const depth = z * cp - py * sp;
+    const wx = px * cl + depth * sl,
+      wy = py * cp + z * sp,
+      wz = depth * cl - px * sl;
+    let best = -Infinity,
+      chosen = null;
+    for (let i = 0; i < this.positions.length; i++) {
+      const [a, b, c] = this.positions[i];
+      const score = a * wx + b * wy + c * wz;
+      if (score > best && (a * sl + c * cl) * cp + b * sp > 0.015) {
+        best = score;
+        chosen = i;
       }
-      const i = members[0],
-        s = this.stations[i];
-      const title =
-        members.length === 1
-          ? "Tune to " + s.name + " in " + s.city
-          : "Browse " + members.length + " stations near " + s.city;
-      if (pin.getAttribute("aria-label") !== title) {
-        pin.setAttribute("aria-label", title);
-        pin.firstChild.textContent =
-          s.city + (members.length > 1 ? " · " + members.length : "");
-      }
-      pin.hidden = false;
-      pin.members = members;
-      pin.style.left = x + "px";
-      pin.style.top = y + "px";
-      pin.classList.toggle("active", i === this.selected);
-      pin.classList.toggle("left", x > this.w - 125);
-    });
-    for (let i = groups.length; i < this.pins.length; i++)
-      this.pins[i].hidden = true;
+    }
+    return chosen;
+  }
+  hover(i) {
+    if (this.hovered === i) return;
+    this.hovered = i;
+    this.drawCaption();
+  }
+  drawCaption() {
+    const i = this.hovered ?? this.selected,
+      s = this.stations[i];
+    const [x, y, z] = this.project(s.lat, s.lon);
+    const el = this.caption;
+    el.hidden = z < 0.015;
+    if (el.hidden) return;
+    const discovering = this.hovered !== null;
+    const count = this.cityMembers.get(this.cityKey(s)).length;
+    const label = s.city + (discovering && count > 1 ? " · " + count : "");
+    if (el.textContent !== label) el.textContent = label;
+    const description =
+      count > 1
+        ? "Browse " + count + " stations in " + s.city
+        : "Play " + s.name + " in " + s.city;
+    if (el.getAttribute("aria-label") !== description)
+      el.setAttribute("aria-label", description);
+    el.classList.toggle("discovering", discovering);
+    el.classList.toggle("inward", x > this.w - Math.min(170, this.w * 0.3));
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+  }
+  choose(i) {
+    if (i === null) return;
+    const members = this.cityMembers.get(this.cityKey(this.stations[i]));
+    this.hover(null);
+    if (members.length === 1) this.onSelect(i);
+    else this.onCluster(members);
   }
   rotate(lon, lat) {
     this.lon = ((((lon + 540) % 360) + 360) % 360) - 180;
     this.lat = Math.max(-84, Math.min(84, lat));
     this.draw();
   }
-  ring(center, angle, color, width) {
-    const [ax, ay, az] = center,
-      flat = Math.hypot(ax, az) || 1,
-      ux = az / flat,
-      uz = -ax / flat;
-    const vx = ay * uz,
-      vy = az * ux - ax * uz,
-      vz = -ay * ux;
-    const ca = Math.cos(angle),
-      sa = Math.sin(angle),
-      p = this.lat * this.rad,
-      l = this.lon * this.rad;
-    const cp = Math.cos(p),
-      sp = Math.sin(p),
-      cl = Math.cos(l),
-      sl = Math.sin(l);
-    const c = this.ctx;
-    let visible = false;
-    c.beginPath();
-    for (let j = 0; j <= 156; j++) {
-      const t = (j * 2 * Math.PI) / 156,
-        u = sa * Math.cos(t),
-        v = sa * Math.sin(t);
-      const x = ax * ca + ux * u + vx * v,
-        y = ay * ca + vy * v,
-        z = az * ca + uz * u + vz * v;
-      const depth = x * sl + z * cl,
-        front = y * sp + depth * cp;
-      const dx = this.cx + this.radius * (x * cl - z * sl),
-        dy = this.cy - this.radius * (y * cp - depth * sp);
-      if (front > 0) {
-        if (visible) c.lineTo(dx, dy);
-        else c.moveTo(dx, dy);
-      }
-      visible = front > 0;
-    }
-    c.strokeStyle = color;
-    c.lineWidth = width;
-    c.stroke();
-  }
   drawWaves(now) {
-    const c = this.ctx,
-      r = this.radius;
-    if (!r) return;
+    const c = this.ctx;
+    if (!this.radius) return;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
-    drawMantle(this);
     this.drawJourney(now);
-    const station = this.stations[this.selected],
-      lat = station.lat * this.rad,
-      lon = station.lon * this.rad;
-    const center = [
-      Math.cos(lat) * Math.sin(lon),
-      Math.sin(lat),
-      Math.cos(lat) * Math.cos(lon),
-    ];
-    for (const angle of [0.115, 0.153])
-      this.ring(center, angle, "rgba(255,210,163,.39)", 0.85);
-    const elapsed = now - this.waveStart,
-      cycle = 4200;
-    if (!this.reduced && !this.listening && elapsed < cycle) {
-      const phase = (elapsed % cycle) / cycle;
-      for (const delay of [0, 0.047, 0.1]) {
-        const t = phase - delay;
-        if (t < 0) continue;
-        const alpha = 0.52 * (1 - t) ** 1.8 * Math.min(1, t * 18);
-        this.ring(
-          center,
-          0.13 + 1.25 * t,
-          "rgba(255,211,161," + alpha + ")",
-          delay === 0 ? 1.35 : 0.85,
-        );
-      }
+    // Browsers using the raster surface receive the same local soft light.
+    if (
+      !this.sphere.gl &&
+      this.listening &&
+      this.loudness > 0.015 &&
+      !this.reduced
+    ) {
+      const s = this.stations[this.selected],
+        [x, y, z] = this.project(s.lat, s.lon);
+      if (z <= 0) return;
+      const r = this.radius * (0.13 + 0.16 * this.hold);
+      const halo = c.createRadialGradient(x, y, 0, x, y, r);
+      halo.addColorStop(
+        0,
+        "rgba(249,185,145," + Math.min(0.57, this.loudness * 0.8) + ")",
+      );
+      halo.addColorStop(1, "rgba(249,185,145,0)");
+      c.save();
+      c.beginPath();
+      c.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
+      c.clip();
+      c.fillStyle = halo;
+      c.fillRect(x - r, y - r, r * 2, r * 2);
+      c.restore();
     }
   }
   drawJourney(now) {
@@ -333,6 +289,16 @@ class RadioGlobe {
           this.firstLight = now;
           this.awaitingSound = false;
         }
+        if (
+          responsive &&
+          !this.awaitingSound &&
+          this.strike > 0.22 &&
+          this.strike > (this.previousStrike || 0) + 0.08 &&
+          now - (this.pulse?.at || 0) > 600
+        ) {
+          this.pulse = { at: now, strength: this.strike };
+        }
+        this.previousStrike = this.strike;
         if (measured) this.energy.set(measured);
         else this.energy.fill(0);
         this.time +=
@@ -368,6 +334,7 @@ class RadioGlobe {
   }
   setReduced(reduced) {
     this.reduced = reduced;
+    this.pulse = null;
     this.cancelFlight();
     this.journey = null;
     if (reduced) this.rotate(this.lon, this.lat);
@@ -375,10 +342,11 @@ class RadioGlobe {
   }
   broadcast(active) {
     if (active !== this.listening) {
+      this.pulse = null;
+      this.previousStrike = 0;
       this.awaitingSound = active;
       this.firstLight = 0;
     }
-    if (active && !this.listening) this.waveStart = performance.now();
     this.listening = active;
     this.refreshWaves();
   }
@@ -387,18 +355,18 @@ class RadioGlobe {
     this.journey = this.reduced
       ? null
       : this.stationRoute(this.stations[this.selected], this.stations[i]);
+    this.hover(null);
+    this.pulse = null;
     this.selected = i;
-    this.waveStart = performance.now();
     this.refreshWaves();
     const target = this.stations[i],
-      start = this.waveStart,
+      start = performance.now(),
       lon = this.lon,
       lat = this.lat;
     const delta = ((target.lon - lon + 540) % 360) - 180,
       travel = Math.min(1, Math.abs(delta) / 90);
     const duration = 970 + 1050 * travel;
     this.flightEnd = this.reduced ? 0 : start + duration;
-    this.arrivalAt = this.journey ? start + duration * 0.59 : 0;
     const step = (now) => {
       const t = this.reduced ? 1 : Math.min(1, (now - start) / duration);
       const e = t * t * t * (t * (t * 6 - 15) + 10);
@@ -425,6 +393,26 @@ class RadioGlobe {
       vx = 0,
       vy = 0,
       lastMove = 0;
+    let tapOrigin = null;
+    const pick = (e) => {
+      const bounds = canvas.getBoundingClientRect();
+      const x = e.clientX - bounds.left,
+        y = e.clientY - bounds.top;
+      const station = this.stations[this.selected],
+        [sx, sy, z] = this.project(station.lat, station.lon);
+      if (z > 0.015 && Math.hypot(x - sx, y - sy) < (this.mobile ? 14 : 9))
+        return this.selected;
+      return this.nearest(x, y);
+    };
+    canvas.onpointerleave = (e) => {
+      if (e.relatedTarget !== this.caption) this.hover(null);
+    };
+    this.caption.onpointerleave = (e) => {
+      if (e.relatedTarget !== canvas) this.hover(null);
+    };
+    canvas.onblur = (e) => {
+      if (e.relatedTarget !== this.caption) this.hover(null);
+    };
     const pairDistance = () => {
       const p = [...pointers.values()];
       return Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
@@ -439,11 +427,22 @@ class RadioGlobe {
       vx = vy = 0;
       lastMove = performance.now();
       pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      tapOrigin = pointers.size === 1 ? [e.clientX, e.clientY] : null;
       canvas.setPointerCapture(e.pointerId);
       reset();
     };
     canvas.onpointermove = (e) => {
-      if (!pointers.has(e.pointerId)) return;
+      if (!pointers.has(e.pointerId)) {
+        if (e.pointerType === "mouse") this.hover(pick(e));
+        return;
+      }
+      if (
+        tapOrigin &&
+        Math.hypot(e.clientX - tapOrigin[0], e.clientY - tapOrigin[1]) < 6
+      )
+        return;
+      tapOrigin = null;
+      this.hover(null);
       this.exploring = true;
       this.onExplore?.();
       pointers.set(e.pointerId, [e.clientX, e.clientY]);
@@ -465,12 +464,21 @@ class RadioGlobe {
       }
     };
     canvas.onpointerup = (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      const tapped =
+        tapOrigin &&
+        Math.hypot(e.clientX - tapOrigin[0], e.clientY - tapOrigin[1]) < 6;
+      tapOrigin = null;
       pointers.delete(e.pointerId);
       if (!pointers.size && this.exploring) {
         this.exploring = false;
         this.onExplore?.();
       }
       reset();
+      if (tapped) {
+        this.choose(pick(e));
+        return;
+      }
       if (pointers.size || this.reduced || performance.now() - lastMove > 75)
         return;
       const start = performance.now(),
@@ -488,6 +496,7 @@ class RadioGlobe {
       this.frame = requestAnimationFrame(coast);
     };
     canvas.onpointercancel = canvas.onlostpointercapture = (e) => {
+      tapOrigin = null;
       pointers.delete(e.pointerId);
       if (!pointers.size && this.exploring) {
         this.exploring = false;
@@ -498,6 +507,7 @@ class RadioGlobe {
     canvas.onwheel = (e) => {
       e.preventDefault();
       this.onExplore?.();
+      this.hover(null);
       this.scale(Math.exp(-Math.sign(e.deltaY) * 0.055));
     };
     canvas.onkeydown = (e) => {
@@ -512,6 +522,12 @@ class RadioGlobe {
         this.cancelFlight();
         this.onExplore?.();
         this.rotate(this.lon + keys[e.key][0], this.lat + keys[e.key][1]);
+        this.hover(this.nearest(this.cx, this.cy));
+        document.getElementById("keyboard-city").textContent =
+          this.caption.getAttribute("aria-label");
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.choose(this.hovered ?? this.nearest(this.cx, this.cy));
       } else if (["+", "=", "-"].includes(e.key)) {
         e.preventDefault();
         this.onExplore?.();
