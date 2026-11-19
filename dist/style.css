@@ -3,3 +3,4 @@
 @media(max-width:600px){header{inset:20px 18px auto}.dock{bottom:max(7svh,env(safe-area-inset-bottom));width:min(300px,calc(100% - 40px))}h1{font-size:15px}.pin span{font-size:12px}}
 @media(max-height:520px){header{top:10px}.dock{bottom:9px;width:265px}.dock p{display:none}.player{padding:5px 11px 5px 6px}#play{width:36px;height:36px}}
 @media(prefers-reduced-motion:reduce){*,*:after,*:before{animation:none!important;transition:none!important}}
+main{background:radial-gradient(ellipse at 48% 42%,#111b1c 0%,#0a1012 42%,#070b0d 72%,#06090b 100%)}.player{background:linear-gradient(135deg,#253034b5,#121a1de6)}.pin:not(.active):before{background:#f2f7ed;box-shadow:0 0 6px 1px #b5d0bc}.pin:not(.active):after{border-color:#d6e7d3a8}

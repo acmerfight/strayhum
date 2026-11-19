@@ -14,11 +14,12 @@ class RadioGlobe {
       pin.addEventListener('click', () => onSelect(i));
       document.querySelector('#pins').append(pin); return pin;
     });
-    this.texture = new Image();
-    this.lights = new Image();
-    let loaded=0;
-    this.texture.onload = this.lights.onload = () => { if(++loaded===2){this.prepareRenderer();this.draw();} };
-    this.texture.src = 'earth.jpg'; this.lights.src = 'lights.jpg';
+    this.ctx=this.canvas.getContext('2d');
+    this.land=new Float32Array(LAND_SAMPLES.length*3);
+    LAND_SAMPLES.forEach(([a,b],i)=>{
+      const lat=a*this.rad/100,lon=b*this.rad/100,c=Math.cos(lat);
+      this.land.set([c*Math.sin(lon),Math.sin(lat),c*Math.cos(lon)],i*3);
+    });
     this.input();
     new ResizeObserver(() => this.resize()).observe(this.sky);
     this.resize();
@@ -31,69 +32,44 @@ class RadioGlobe {
     this.radius = Math.min(this.w*.456, this.h*.345)*this.zoom;
     this.draw();
   }
-  prepareRenderer() {
-    this.gl = this.canvas.getContext('webgl',{alpha:true,antialias:false,premultipliedAlpha:false});
-    if (!this.gl) { this.prepareFallback(); return; }
-    const gl=this.gl;
-    const vertex='attribute vec2 pos;void main(){gl_Position=vec4(pos,0.,1.);}';
-    const fragment=`precision highp float;
-      uniform sampler2D atlas, lights; uniform vec2 res, center; uniform float radius, lat, lon;
-      void main(){
-        vec2 p=(vec2(gl_FragCoord.x,res.y-gl_FragCoord.y)-center)/radius; p.y=-p.y;
-        float d=length(p); float rimLight=.49+.48*dot(normalize(p+vec2(.00001)),vec2(-.85,.52));
-        if(d>1.){float halo=exp(-(d-1.)*60.)*.55*rimLight; gl_FragColor=vec4(.48,.72,.96,halo);return;}
-        float z=sqrt(max(0.,1.-dot(p,p)));
-        float latitude=asin(clamp(p.y*cos(lat)+z*sin(lat),-1.,1.));
-        float longitude=atan(p.x,z*cos(lat)-p.y*sin(lat))+lon;
-        vec2 uv=vec2(fract(longitude/6.2831853+.5),.5-latitude/3.14159265);
-        vec3 surface=texture2D(atlas,uv).rgb;
-        float incidence=dot(vec3(p,z),normalize(vec3(-.94,.38,.23)));
-        float sun=smoothstep(-.29,.74,incidence);
-        vec3 day=mix(vec3(dot(surface,vec3(.24,.59,.17))),surface,.79);
-        vec3 color=day*(.087+sun*.96)+vec3(.003,.009,.015)*(1.-sun);
-        float urban=texture2D(lights,uv).r;
-        color+=vec3(1.,.75,.43)*pow(urban,1.15)*(1.-smoothstep(-.20,.43,incidence))*.96;
-        color+=vec3(.13,.29,.49)*pow(1.-z,3.5)*rimLight;
-        color=mix(color,vec3(.71,.85,.99),smoothstep(.990,1.,d)*rimLight*.82);
-        gl_FragColor=vec4(color,1.);
-      }`;
-    function compile(type,src){const shader=gl.createShader(type);gl.shaderSource(shader,src);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;}
-    const prog=gl.createProgram();gl.attachShader(prog,compile(gl.VERTEX_SHADER,vertex));gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(prog);gl.useProgram(prog);
-    const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
-    const pos=gl.getAttribLocation(prog,'pos');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
-    const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,this.texture);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    gl.activeTexture(gl.TEXTURE1);
-    const night=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,night);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,this.lights);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    gl.uniform1i(gl.getUniformLocation(prog,'lights'),1);
-    this.uniform={};for(const key of ['lat','lon','radius','center','res'])this.uniform[key]=gl.getUniformLocation(prog,key);
-  }
-  prepareFallback(){
-    const src=document.createElement('canvas');src.width=1024;src.height=512;const c=src.getContext('2d');c.drawImage(this.texture,0,0,1024,512);
-    this.pixels=c.getImageData(0,0,1024,512).data;
-    c.drawImage(this.lights,0,0,1024,512);this.nightPixels=c.getImageData(0,0,1024,512).data;this.raster=document.createElement('canvas');this.ctx=this.canvas.getContext('2d');
-  }
-  rasterize(){
-    const size=Math.min(540,Math.ceil(this.radius*2*this.dpr)),half=size/2,c=this.raster.getContext('2d');
-    this.raster.width=this.raster.height=size;const data=c.createImageData(size,size),dst=data.data,src=this.pixels;
-    const sl=Math.sin(this.lat*this.rad),cl=Math.cos(this.lat*this.rad);
-    for(let y=0;y<size;y++){const py=(half-y)/half;for(let x=0;x<size;x++){const px=(x-half)/half,z2=1-px*px-py*py;if(z2<=0)continue;
-      const z=Math.sqrt(z2),lat=Math.asin(py*cl+z*sl),lon=Math.atan2(px,z*cl-py*sl)+this.lon*this.rad;
-      const i=4*((((lon/(2*Math.PI)+.5)*1024|0)+2048)%1024+1024*Math.min(511,Math.max(0,(.5-lat/Math.PI)*512|0))),o=(y*size+x)*4;
-      const incidence=(-.94*px+.38*py+.23*z)/1.039, sun=Math.max(0,Math.min(1,(incidence+.29)/1.03)), light=.087+.96*sun*sun*(3-2*sun);
-      const lights=this.nightPixels[i]*Math.max(0,Math.min(1, (.43-incidence)/.63)),rim=(1-z)**4*(.49+.48*(-.85*px+.52*py));
-      dst[o]=src[i]*light+lights+33*rim;dst[o+1]=src[i+1]*light+lights*.75+74*rim;dst[o+2]=src[i+2]*light+lights*.43+125*rim;dst[o+3]=255;
-    }}c.putImageData(data,0,0);const ctx=this.ctx;ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.clearRect(0,0,this.w,this.h);ctx.drawImage(this.raster,this.cx-this.radius,this.cy-this.radius,this.radius*2,this.radius*2);
-  }
   project(lat,lon){
     const a=lat*this.rad,b=(lon-this.lon)*this.rad,p=this.lat*this.rad,c=Math.cos(a);
     return [this.cx+this.radius*c*Math.sin(b),this.cy-this.radius*(Math.sin(a)*Math.cos(p)-c*Math.cos(b)*Math.sin(p)),Math.sin(a)*Math.sin(p)+c*Math.cos(b)*Math.cos(p)];
   }
   draw(){
-    const {gl,uniform:u,dpr:k,radius:r,cx,cy}=this;
-    if(gl&&u){gl.viewport(0,0,this.canvas.width,this.canvas.height);gl.uniform2f(u.res,this.canvas.width,this.canvas.height);gl.uniform2f(u.center,cx*k,cy*k);gl.uniform1f(u.radius,r*k);gl.uniform1f(u.lon,this.lon*this.rad);gl.uniform1f(u.lat,this.lat*this.rad);gl.drawArrays(gl.TRIANGLES,0,6);}
-    else if(this.ctx)this.rasterize();
+    const {ctx:c,radius:r,cx,cy,dpr}=this;
+    c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,this.w,this.h);
+    if(!r)return;
+    const circle=()=>{c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);};
+    const wash=c.createRadialGradient(cx-r*.32,cy-r*.48,0,cx,cy,r*1.18);
+    wash.addColorStop(0,'#1b2a2b');wash.addColorStop(.7,'#101b1e');wash.addColorStop(1,'#0a1115');
+    circle();c.fillStyle=wash;c.fill();
+    // Curves are clipped at the horizon in geographic space.
+    c.lineWidth=.65;c.strokeStyle='rgba(157,188,182,.16)';
+    const trace=(count,coord)=>{let visible=false;for(let i=0;i<=count;i++){
+      const [lat,lon]=coord(i),[x,y,z]=this.project(lat,lon);
+      if(z>0){if(visible)c.lineTo(x,y);else c.moveTo(x,y);}visible=z>0;
+    }};
+    c.beginPath();for(let lat=-60;lat<=60;lat+=30)trace(144,i=>[lat,i*2.5-180]);
+    for(let lon=-180;lon<180;lon+=30)trace(80,i=>[i*2.25-90,lon]);c.stroke();
+
+    const a=this.lon*this.rad,b=this.lat*this.rad,sa=Math.sin(a),ca=Math.cos(a),sb=Math.sin(b),cb=Math.cos(b);
+    const colors=['#344849','#475b5b','#596f6b','#71847c','#8b9b8e','#a7b1a0','#c4c9b4','#dce0c9'];
+    const buckets=colors.map(()=>new Path2D()),v=this.land;
+    const size=Math.max(.62,r*.0043);
+    for(let i=0;i<v.length;i+=3){
+      const x=v[i]*ca-v[i+2]*sa,zz=v[i]*sa+v[i+2]*ca;
+      const y=v[i+1]*cb-zz*sb,z=v[i+1]*sb+zz*cb;
+      if(z<=.015)continue;
+      const light=.54-.38*x+.24*y+.13*z+Math.sin(i*2.7)*.042;
+      const bucket=buckets[Math.max(0,Math.min(7,light*8|0))];
+      const dx=cx+r*x,dy=cy-r*y,sz=size*(.50+.50*Math.sqrt(z));
+      bucket.moveTo(dx+sz,dy);bucket.arc(dx,dy,sz,0,Math.PI*2);
+    }
+    buckets.forEach((path,i)=>{c.fillStyle=colors[i];c.fill(path);});
+    const rim=c.createLinearGradient(cx-r,cy-r,cx+r,cy+r);
+    rim.addColorStop(0,'rgba(201,219,202,.67)');rim.addColorStop(.48,'rgba(137,161,152,.21)');rim.addColorStop(1,'rgba(119,148,143,.07)');
+    circle();c.strokeStyle=rim;c.lineWidth=.9;c.stroke();
     // Separate nearby city hit targets on small globes, keeping the selected city anchored.
     const occupied=[];
     const points=this.stations.map((s,i)=>({i,point:this.project(s.lat,s.lon)}));
