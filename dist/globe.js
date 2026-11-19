@@ -34,6 +34,10 @@ class RadioGlobe {
     this.flightScale = 1;
     this.waveStart = performance.now();
     this.listening = false;
+    this.hold = 0;
+    this.strike = 0;
+    this.loudness = 0;
+    this.firstLight = 0;
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) this.refreshWaves();
     });
@@ -178,7 +182,7 @@ class RadioGlobe {
       this.ring(center, angle, "rgba(255,210,163,.39)", 0.85);
     const elapsed = now - this.waveStart,
       cycle = 4200;
-    if (!this.reduced && (elapsed < cycle || this.listening)) {
+    if (!this.reduced && !this.listening && elapsed < cycle) {
       const phase = (elapsed % cycle) / cycle;
       for (const delay of [0, 0.047, 0.1]) {
         const t = phase - delay;
@@ -270,9 +274,29 @@ class RadioGlobe {
       if (!last || now - last >= interval) {
         const delta = last ? Math.min(80, now - last) / 1000 : 0;
         last = now;
-        const measured = this.signal?.sample();
+        const responsive = this.listening && this.signal?.analyser;
+        const measured = responsive ? this.signal.sample(delta) : null;
+        this.strike = responsive ? this.signal.attack : 0;
+        this.hold = responsive ? this.signal.sustain : 0;
+        this.loudness = responsive ? this.signal.level : 0;
+        if (
+          this.awaitingSound &&
+          responsive &&
+          now >= (this.flightEnd || 0) &&
+          this.loudness > 0.015
+        ) {
+          this.firstLight = now;
+          this.awaitingSound = false;
+        }
         if (measured) this.energy.set(measured);
-        this.time += delta * (this.listening ? 1.15 : 0.54);
+        else this.energy.fill(0);
+        this.time +=
+          delta *
+          (responsive
+            ? Math.min(1, this.loudness * 7) * (0.27 + this.hold * 1.7)
+            : this.listening
+              ? 0.22
+              : 0.54);
         this.tint +=
           (((this.selected * 0.618) % 1) - this.tint) *
           Math.min(1, delta * 1.5);
@@ -305,6 +329,10 @@ class RadioGlobe {
     this.refreshWaves();
   }
   broadcast(active) {
+    if (active !== this.listening) {
+      this.awaitingSound = active;
+      this.firstLight = 0;
+    }
     if (active && !this.listening) this.waveStart = performance.now();
     this.listening = active;
     this.refreshWaves();
@@ -324,7 +352,8 @@ class RadioGlobe {
     const delta = ((target.lon - lon + 540) % 360) - 180,
       travel = Math.min(1, Math.abs(delta) / 90);
     const duration = 970 + 1050 * travel;
-    this.arrivalAt = start + duration * 0.59;
+    this.flightEnd = this.reduced ? 0 : start + duration;
+    this.arrivalAt = this.journey ? start + duration * 0.59 : 0;
     const step = (now) => {
       const t = this.reduced ? 1 : Math.min(1, (now - start) / duration);
       const e = t * t * t * (t * (t * 6 - 15) + 10);
@@ -336,6 +365,7 @@ class RadioGlobe {
   }
   cancelFlight() {
     cancelAnimationFrame(this.frame);
+    this.flightEnd = 0;
     this.flightScale = 1;
   }
   scale(factor) {
@@ -369,6 +399,8 @@ class RadioGlobe {
     };
     canvas.onpointermove = (e) => {
       if (!pointers.has(e.pointerId)) return;
+      this.exploring = true;
+      this.onExplore?.();
       pointers.set(e.pointerId, [e.clientX, e.clientY]);
       if (pointers.size === 2) {
         const distance = pairDistance();
@@ -389,6 +421,10 @@ class RadioGlobe {
     };
     canvas.onpointerup = (e) => {
       pointers.delete(e.pointerId);
+      if (!pointers.size && this.exploring) {
+        this.exploring = false;
+        this.onExplore?.();
+      }
       reset();
       if (pointers.size || this.reduced || performance.now() - lastMove > 75)
         return;
@@ -408,10 +444,15 @@ class RadioGlobe {
     };
     canvas.onpointercancel = canvas.onlostpointercapture = (e) => {
       pointers.delete(e.pointerId);
+      if (!pointers.size && this.exploring) {
+        this.exploring = false;
+        this.onExplore?.();
+      }
       reset();
     };
     canvas.onwheel = (e) => {
       e.preventDefault();
+      this.onExplore?.();
       this.scale(Math.exp(-Math.sign(e.deltaY) * 0.055));
     };
     canvas.onkeydown = (e) => {
@@ -424,9 +465,11 @@ class RadioGlobe {
       if (keys[e.key]) {
         e.preventDefault();
         this.cancelFlight();
+        this.onExplore?.();
         this.rotate(this.lon + keys[e.key][0], this.lat + keys[e.key][1]);
       } else if (["+", "=", "-"].includes(e.key)) {
         e.preventDefault();
+        this.onExplore?.();
         this.scale(e.key === "-" ? 0.9 : 1.1);
       }
     };

@@ -21,7 +21,7 @@ class SignalSphere {
     const fragment = `precision highp float;
       uniform sampler2D plate;
       uniform vec2 center; uniform float height, radius, lat, lon;
-      uniform vec3 energy, beacon;uniform float phase, arrival, tint;
+      uniform vec3 energy, beacon, phrase;uniform float firstLight;uniform float phase, arrival, tint;
       void main(){
         vec2 p=(vec2(gl_FragCoord.x,height-gl_FragCoord.y)-center)/radius;p.y=-p.y;
         float d=length(p);
@@ -67,6 +67,10 @@ class SignalSphere {
         float front=exp(-abs(distanceToFront)*8.)*pow(.5+.5*cos(distanceToFront*123.),4.);
         float gate=smoothstep(0.,.11,arrival)*(1.-smoothstep(.66,1.,arrival));
         surface+=mix(warm,pearl,.48)*front*gate*(.25+.54*cut.b);
+        float first=separation-firstLight*2.6;
+        float bloom=exp(-abs(first)*11.)*(1.-smoothstep(.52,1.,firstLight));
+        surface+=mix(warm,pearl,.48)*bloom*phrase.z*(.4+.6*cut.b);
+        surface+=alloy*(ridges*.35*phrase.x+veil*.46*phrase.y)*cut.b;
 
         gl_FragColor=vec4(surface,clamp((1.-d)*radius,0.,1.));
       }`;
@@ -113,6 +117,8 @@ class SignalSphere {
       "lon",
       "phase",
       "arrival",
+      "firstLight",
+      "phrase",
       "tint",
       "energy",
       "beacon",
@@ -158,6 +164,17 @@ class SignalSphere {
               0,
               Math.min(1, (performance.now() - view.arrivalAt) / 1750),
             );
+      const first =
+        view.firstLight && !view.reduced
+          ? Math.min(1, (performance.now() - view.firstLight) / 1900)
+          : 1;
+      g.uniform1f(u.firstLight, first);
+      g.uniform3f(
+        u.phrase,
+        view.strike || 0,
+        view.hold || 0,
+        Math.min(1, (view.loudness || 0) * 4),
+      );
       g.uniform1f(u.arrival, arrival);
       g.uniform1f(u.phase, view.time || 0);
       g.uniform1f(u.tint, view.tint || 0);

@@ -24,6 +24,8 @@ let index = Math.max(
   audio = null,
   timeout = 0;
 const live = new LiveSignal();
+const credit = new TrackCredit($("credit"));
+let sceneTimer;
 const states = {
   idle: "Listen live",
   connecting: "Tuning…",
@@ -32,11 +34,27 @@ const states = {
   failed: "Signal lost · retry",
 };
 function setState(s) {
+  const changed = state !== s;
   state = s;
   document.body.dataset.playback = s;
   globe.broadcast(s === "playing");
   document.body.classList.toggle("playing", s === "playing");
   $("status").textContent = states[s];
+  if (s === "playing" && changed) {
+    clearTimeout(sceneTimer);
+    const remaining = globe.reduced
+      ? 0
+      : Math.max(0, (globe.flightEnd || 0) - performance.now());
+    sceneTimer = setTimeout(() => {
+      if (state === "playing" && !globe.exploring) showIdentity(true);
+    }, remaining);
+    credit.follow(STATIONS[index].id);
+  } else if (s !== "playing") {
+    clearTimeout(sceneTimer);
+    credit.clear();
+    // A short rebuffer keeps the listening layout. A new selection explicitly resets it.
+    if (s !== "connecting") showIdentity(false);
+  }
   const running = s === "playing" || s === "connecting";
   $("play").innerHTML = icon(running ? "pause" : "play");
   $("play").setAttribute("aria-label", running ? "Pause" : "Play");
@@ -108,13 +126,77 @@ let cityClock;
 function updateClock() {
   if (cityClock) $("clock").textContent = cityClock.format(new Date());
 }
-function display() {
+function showIdentity(listening, stationChanged = false) {
+  const mode = listening ? "listening" : "exploring";
+  if (document.body.dataset.scene === mode && !stationChanged) return;
   const s = STATIONS[index],
-    city = $("city");
-  city.textContent = s.city;
-  city.classList.toggle("long", s.city.length > 9);
+    head = $("headline"),
+    sub = $("subhead");
+  const swap = document.body.dataset.scene && !stationChanged && !globe.reduced;
+  document.querySelector(".title-echo")?.remove();
+  for (const el of [head, sub]) el.getAnimations().forEach((a) => a.cancel());
+  if (swap) {
+    const echo = document.createElement("span");
+    const box = head.getBoundingClientRect();
+    const style = getComputedStyle(head);
+    echo.className = "title-echo";
+    echo.setAttribute("aria-hidden", "true");
+    echo.textContent = head.textContent;
+    for (const key of [
+      "fontFamily",
+      "fontSize",
+      "fontStyle",
+      "fontWeight",
+      "lineHeight",
+      "letterSpacing",
+      "color",
+      "overflowWrap",
+    ]) {
+      echo.style[key] = style[key];
+    }
+    Object.assign(echo.style, {
+      left: box.left + "px",
+      top: box.top + "px",
+      width: box.width + "px",
+    });
+    document.body.append(echo);
+    const outgoing = echo.animate(
+      [
+        { opacity: 1 },
+        { opacity: 0, transform: "translateY(-7px) scale(.98)" },
+      ],
+      { duration: 190, easing: "ease-in", fill: "forwards" },
+    );
+    outgoing.onfinish = () => echo.remove();
+  }
+  document.body.dataset.scene = mode;
+  head.textContent = listening ? s.name : s.city;
+  sub.textContent = listening ? s.city : s.name;
+  head.classList.toggle("long", head.textContent.length > (listening ? 14 : 9));
+  head.classList.toggle(
+    "medium",
+    listening && head.textContent.length >= 8 && head.textContent.length <= 14,
+  );
+  if (!swap) return;
+  for (const el of [head, sub]) {
+    el.animate(
+      [
+        { opacity: 0, transform: "translateY(8px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      {
+        delay: el === head ? 185 : 270,
+        duration: listening ? 520 : 280,
+        easing: "cubic-bezier(.18,.72,.25,1)",
+        fill: "backwards",
+      },
+    );
+  }
+}
+function display() {
+  const s = STATIONS[index];
+  showIdentity(false, true);
   $("place").textContent = s.country;
-  $("name").textContent = s.name;
   $("genre").textContent = s.genre;
   $("freq").textContent = s.frequency;
   $("clock-place").textContent = s.city;
@@ -140,23 +222,6 @@ function display() {
     .forEach((el) =>
       el.classList.toggle("active", Number(el.dataset.index) === index),
     );
-  if (!globe.reduced) {
-    city.getAnimations().forEach((animation) => animation.cancel());
-    city.animate(
-      [
-        { opacity: 0.05, transform: "translateY(13px)", filter: "blur(4px)" },
-        { opacity: 1, transform: "translateY(0)", filter: "blur(0)" },
-      ],
-      { duration: 800, easing: "cubic-bezier(.18,.76,.22,1)" },
-    );
-    document.querySelector(".station-line").animate(
-      [
-        { opacity: 0, transform: "translateY(4px)" },
-        { opacity: 1, transform: "none" },
-      ],
-      { duration: 520, delay: 150, fill: "backwards" },
-    );
-  }
 }
 setInterval(updateClock, 15000);
 function select(i) {
@@ -167,6 +232,16 @@ function select(i) {
 }
 const globe = new RadioGlobe(STATIONS, select);
 globe.signal = live;
+globe.onExplore = () => {
+  if (state !== "playing") return;
+  clearTimeout(sceneTimer);
+  showIdentity(false);
+  if (!globe.exploring) {
+    sceneTimer = setTimeout(() => {
+      if (state === "playing") showIdentity(true);
+    }, 1000);
+  }
+};
 function motionUI() {
   const label = globe.reduced ? "Resume visual motion" : "Pause visual motion";
   $("motion").setAttribute("aria-label", label);

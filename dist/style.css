@@ -257,7 +257,7 @@ main:after {
   height: 2px;
   background: var(--accent);
 }
-#city {
+#headline {
   font:
     italic 400 clamp(70px, 8.6vw, 150px) / 0.98 Atlas,
     Georgia,
@@ -266,7 +266,7 @@ main:after {
   margin: 16px 0 13px;
   overflow-wrap: break-word;
 }
-#city.long {
+#headline.long {
   font-size: clamp(49px, 5.25vw, 93px);
 }
 .station-line {
@@ -474,8 +474,8 @@ dialog::backdrop {
   .red-rule {
     width: 17px;
   }
-  #city,
-  #city.long {
+  #headline,
+  #headline.long {
     font-size: clamp(43px, 8svh, 68px);
     margin: 7px 0 5px;
   }
@@ -541,7 +541,7 @@ dialog::backdrop {
   .receiver {
     transform: translateY(-45%);
   }
-  #city {
+  #headline {
     font-size: 60px;
     margin: 7px 0;
   }
@@ -655,13 +655,13 @@ h1 em {
   width: clamp(245px, 27vw, 480px);
   transform: translateY(-44%);
 }
-#city {
+#headline {
   font-size: clamp(78px, 9vw, 165px);
   margin: 14px 0 13px;
   font-weight: 400;
   color: #f4f2ef;
 }
-#city.long {
+#headline.long {
   font-size: clamp(49px, 5.65vw, 99px);
 }
 .station-line {
@@ -799,8 +799,8 @@ dialog::backdrop {
     width: 86%;
     transform: none;
   }
-  #city,
-  #city.long {
+  #headline,
+  #headline.long {
     font-size: clamp(43px, 8svh, 68px);
     margin: 6px 0;
   }
@@ -835,7 +835,7 @@ dialog::backdrop {
   }
 }
 @media (max-height: 520px) and (min-aspect-ratio: 6/5) {
-  #city {
+  #headline {
     font-size: 58px;
   }
   .receiver {
@@ -914,9 +914,61 @@ dialog::backdrop {
   border-top: 1px solid #ffffff09;
 }
 @media (max-width: 700px), (max-aspect-ratio: 4/5) {
-  .dial { margin-top: 22px; }
+  .dial {
+    margin-top: 22px;
+  }
   body[data-playback="playing"] #status {
     top: calc(100% + 4px);
     bottom: auto;
   }
+}
+
+.receiver #headline {
+  width: fit-content;
+  max-width: 100%;
+  transform-origin: left center;
+}
+#subhead {
+  transform-origin: left center;
+}
+body[data-scene="listening"] #headline.medium {
+  font-size: clamp(49px, 5.3vw, 90px);
+  line-height: 0.98;
+}
+body[data-scene="listening"] #headline.long {
+  font-size: clamp(39px, 4.2vw, 72px);
+  line-height: 1.01;
+}
+body[data-scene="listening"] #subhead {
+  color: #d2cbc4;
+}
+#credit {
+  font-size: clamp(14px, 1.1vw, 18px);
+  line-height: 1.4;
+  color: #f0d7ad;
+  margin: 14px 0 0;
+  overflow-wrap: anywhere;
+}
+body:not([data-scene="listening"]) #credit {
+  display: none;
+}
+@media (max-width: 700px), (max-aspect-ratio: 4/5) {
+  body[data-scene="listening"] #headline.medium {
+    font-size: clamp(42px, 10vw, 64px);
+  }
+  body[data-scene="listening"] #headline.long {
+    font-size: clamp(36px, 9vw, 56px);
+  }
+  #credit {
+    font-size: 13px;
+    margin: 7px 0 0;
+    max-width: 90%;
+  }
+}
+
+.title-echo {
+  position: fixed;
+  z-index: 4;
+  pointer-events: none;
+  transform-origin: left center;
 }

@@ -11,6 +11,7 @@
     <script defer src="mantle.js"></script>
     <script defer src="globe.js"></script>
     <script defer src="audio.js"></script>
+    <script defer src="track.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -45,11 +46,12 @@
         <div class="location">
           <span class="red-rule"></span><span id="place"></span>
         </div>
-        <h2 id="city"></h2>
+        <h2 id="headline"></h2>
         <div class="station-line">
-          <h3 id="name"></h3>
+          <h3 id="subhead"></h3>
           <span id="genre"></span>
         </div>
+        <p id="credit" aria-live="polite" hidden></p>
         <div class="dial">
           <div class="dial-line" aria-hidden="true"><i id="needle"></i></div>
           <div class="dial-caption">

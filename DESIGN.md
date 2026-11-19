@@ -20,8 +20,8 @@ The most revealing test is a journey from FIP in Paris to Beijing Music Radio. B
 | Drag and release | The geography follows the pointer. A short, decelerating coast follows a flick. | The listener controls an object with a little weight. |
 | Departure | The city name resolves into focus. A fine trace advances along a great-circle route. | The station has changed and the new destination is identifiable. |
 | Passage | The view eases outward, turns and settles over approximately one to two seconds. Longer east–west turns have more clearance. | Distance has a visible duration. |
-| Arrival | Several closely spaced light fronts travel across the globe from the station. | Attention returns to the point that was selected. |
-| Listening | Three frequency bands modulate the material. The live meter appears when analysis is available. | The broadcaster supplies part of the composition. |
+| Arrival | Once the camera settles, the first measured sound sends a light front out from the station. | Attention returns to the point that was selected. |
+| Listening | The station name takes the headline. Fast attacks tighten the strands, sustained sound opens them, and silence lets the surface settle. FIP and KEXP can supply an artist and title during playback. | The broadcaster supplies part of the composition. |
 
 ## Signal and accessibility
 

@@ -9,6 +9,11 @@ function drawMantle(view) {
     tilt = -0.52 + 0.1 * Math.sin(turn),
     cs = Math.cos(tilt),
     sn = Math.sin(tilt);
+  // Attacks pull the strands taut. Sustained sound opens a wider, slower fold.
+  const strike = view.strike || 0,
+    hold = view.hold || 0;
+  const measured = view.listening && view.signal?.analyser;
+  const gain = measured ? 0.48 + Math.min(1, view.loudness * 3) * 0.62 : 1;
   const flight = (1 - view.flightScale) * 8;
   const colors = [
     [
@@ -44,7 +49,8 @@ function drawMantle(view) {
       c.globalAlpha =
         (family ? 0.18 : 0.34) *
         (0.5 + 0.5 * Math.cos(u * 2.6)) *
-        (1 + high * 0.3);
+        (1 + high * 0.3 + strike * 0.42) *
+        gain;
       let pen = false;
       c.beginPath();
       for (let j = 0; j <= 146; j++) {
@@ -54,7 +60,8 @@ function drawMantle(view) {
         const curl = Math.sin(2 * t - angle + turn * 0.42),
           fold = Math.cos(3 * t + angle * 0.7);
         const widen =
-          (0.12 + 0.22 * (0.5 + 0.5 * curl)) * (1 + low * 0.46 + flight * 0.4);
+          (0.12 + 0.22 * (0.5 + 0.5 * curl)) *
+          (1 + low * 0.25 + hold * 0.95 - strike * 0.56 + flight * 0.4);
         const band = u * widen;
         const dist =
           1.005 +
@@ -64,7 +71,7 @@ function drawMantle(view) {
         const x = C * dist;
         const y =
           S * (family ? 0.62 : 0.43) +
-          0.19 * curl +
+          (0.19 + 0.075 * hold - 0.045 * strike) * curl +
           0.075 * fold +
           band * (1.1 + 0.55 * Math.sin(t - angle)) +
           family * 0.075;
