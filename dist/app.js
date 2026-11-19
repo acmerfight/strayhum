@@ -16,9 +16,10 @@ function icon(key) {
 document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
+const requestedStation = new URL(location.href).searchParams.get("station");
 let index = Math.max(
     0,
-    STATIONS.findIndex((s) => s.id === "fip"),
+    STATIONS.findIndex((s) => s.id === requestedStation),
   ),
   state = "idle",
   audio = null,
@@ -194,6 +195,11 @@ function showIdentity(listening, stationChanged = false) {
 }
 function display() {
   const s = STATIONS[index];
+  const url = new URL(location.href);
+  if (url.searchParams.get("station") !== s.id) {
+    url.searchParams.set("station", s.id);
+    history.replaceState(history.state, "", url);
+  }
   showIdentity(false, true);
   $("place").textContent = s.country;
   $("genre").textContent = s.genre;
@@ -246,7 +252,7 @@ function select(i, queue = playQueue, scope) {
   display();
   tune();
 }
-const globe = new RadioGlobe(STATIONS, (i) =>
+const globe = new RadioGlobe(STATIONS, index, (i) =>
   select(i, worldQueue, "World directory"),
 );
 globe.signal = live;

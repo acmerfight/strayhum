@@ -1,13 +1,10 @@
 /* Orthographic globe. The luminous surface, surface picking and great-circle routes share one rotation. */
 class RadioGlobe {
-  constructor(stations, onSelect) {
+  constructor(stations, initialIndex, onSelect) {
     this.canvas = document.querySelector("#globe");
     this.sky = document.querySelector("#sky");
     this.stations = stations;
-    this.selected = Math.max(
-      0,
-      stations.findIndex((s) => s.id === "fip"),
-    );
+    this.selected = initialIndex;
     const station = stations[this.selected];
     this.score = scoreForStation(station);
     this.shape = new Float32Array(this.score.shape);
