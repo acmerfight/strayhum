@@ -16,11 +16,11 @@ function icon(key) {
 document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
-const requestedStation = new URL(location.href).searchParams.get("station");
-let index = Math.max(
-    0,
-    STATIONS.findIndex((s) => s.id === requestedStation),
-  ),
+function stationFromUrl() {
+  const id = new URL(location.href).searchParams.get("station");
+  return Math.max(0, STATIONS.findIndex((s) => s.id === id));
+}
+let index = stationFromUrl(),
   state = "idle",
   audio = null,
   timeout = 0;
@@ -195,11 +195,6 @@ function showIdentity(listening, stationChanged = false) {
 }
 function display() {
   const s = STATIONS[index];
-  const url = new URL(location.href);
-  if (url.searchParams.get("station") !== s.id) {
-    url.searchParams.set("station", s.id);
-    history.replaceState(history.state, "", url);
-  }
   showIdentity(false, true);
   $("place").textContent = s.country;
   $("genre").textContent = s.genre;
@@ -231,7 +226,7 @@ function display() {
 setInterval(updateClock, 15000);
 const worldQueue = STATIONS.map((_, i) => i);
 let playQueue = worldQueue;
-function select(i, queue = playQueue, scope) {
+function setQueue(queue, scope) {
   playQueue = queue;
   $("next").disabled = queue.length < 2;
   if (scope !== undefined) {
@@ -242,18 +237,28 @@ function select(i, queue = playQueue, scope) {
     $("next").title = hint;
     $("next").setAttribute("aria-description", hint);
   }
-  if (i === index && (state === "playing" || state === "connecting")) return;
-  if (i === index) {
-    tune();
-    return;
-  }
+}
+function showStation(i) {
   index = i;
   globe.focus(i);
   display();
+}
+function select(i, queue = playQueue, scope, filter = history.state?.stationFilter) {
+  setQueue(queue, scope);
+  const entry = { ...history.state, stationFilter: filter };
+  if (i !== index) {
+    const url = new URL(location.href);
+    url.searchParams.set("station", STATIONS[i].id);
+    history.pushState(entry, "", url);
+    showStation(i);
+  } else {
+    history.replaceState(entry, "");
+    if (state === "playing" || state === "connecting") return;
+  }
   tune();
 }
 const globe = new RadioGlobe(STATIONS, index, (i) =>
-  select(i, worldQueue, "World directory"),
+  select(i, worldQueue, "World directory", null),
 );
 globe.signal = live;
 globe.onFirstOrbit = () => {
@@ -315,12 +320,6 @@ addOptions(
   STATIONS.map((s) => s.country),
 );
 addOptions(family, STATIONS.flatMap(stationGenres));
-function matchesFilters(s) {
-  return (
-    (!family.value || stationGenres(s).includes(family.value)) &&
-    (!country.value || s.country === country.value)
-  );
-}
 $("play").onclick = toggle;
 $("next").onclick = () => {
   if (playQueue.length > 1)
@@ -328,7 +327,7 @@ $("next").onclick = () => {
 };
 let area = null;
 globe.onCluster = (members) => {
-  area = new Set(members);
+  area = globe.cityKey(STATIONS[members[0]]);
   $("area").textContent = "Near " + STATIONS[members[0]].city + "  ×";
   $("area").setAttribute(
     "aria-label",
@@ -369,13 +368,7 @@ picker.onclick = (e) => {
 let results = [],
   shown = 0;
 function drawList() {
-  const terms = fold($("search").value.trim()).split(/\s+/).filter(Boolean);
-  results = stationIndex.filter(
-    ({ s, i, text }) =>
-      (!area || area.has(i)) &&
-      matchesFilters(s) &&
-      terms.every((q) => text.includes(q)),
-  );
+  results = matchingStations(pickerFilter());
   const list = $("list");
   list.replaceChildren();
   list.scrollTop = 0;
@@ -403,18 +396,12 @@ function appendResults() {
     row.querySelector("small").textContent = s.city + ", " + s.country;
     row.querySelector(".smeta").textContent = s.genre;
     row.onclick = () => {
-      const scope = [
-        area ? s.city : "",
-        country.value,
-        family.value,
-        $("search").value.trim(),
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      const filter = pickerFilter();
       select(
         i,
         results.map((item) => item.i),
-        scope || "World directory",
+        queueLabel(filter, s),
+        filter,
       );
       picker.close();
     };
@@ -439,5 +426,50 @@ function appendResults() {
 }
 $("search").oninput = drawList;
 country.onchange = family.onchange = drawList;
+function pickerFilter() {
+  return {
+    cityKey: area,
+    country: country.value,
+    family: family.value,
+    query: $("search").value.trim(),
+  };
+}
+function matchingStations(filter) {
+  const terms = fold(filter.query).split(/\s+/).filter(Boolean);
+  return stationIndex.filter(({ s, text }) =>
+    (!filter.cityKey || globe.cityKey(s) === filter.cityKey) &&
+    (!filter.country || s.country === filter.country) &&
+    (!filter.family || stationGenres(s).includes(filter.family)) &&
+    terms.every((q) => text.includes(q))
+  );
+}
+function queueLabel(filter, station) {
+  return [filter.cityKey && station.city, filter.country, filter.family, filter.query]
+    .filter(Boolean).join(" · ") || "World directory";
+}
+function restoreQueue(i) {
+  const filter = history.state?.stationFilter;
+  if (filter) {
+    const queue = matchingStations(filter).map(item => item.i);
+    if (queue.includes(i)) {
+      setQueue(queue, queueLabel(filter, STATIONS[i]));
+      return;
+    }
+  }
+  setQueue(worldQueue, "World directory");
+}
+window.addEventListener("popstate", () => {
+  const i = stationFromUrl();
+  restoreQueue(i);
+  if (i === index) return;
+  showStation(i);
+  if (state !== "paused" && state !== "idle") tune();
+});
+const initialUrl = new URL(location.href);
+if (initialUrl.searchParams.get("station") !== STATIONS[index].id) {
+  initialUrl.searchParams.set("station", STATIONS[index].id);
+  history.replaceState(history.state, "", initialUrl);
+}
+restoreQueue(index);
 display();
 setState("idle");
