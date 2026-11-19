@@ -16,7 +16,10 @@ function icon(key) {
 document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
-const featuredIds = new Set(["fip", "kexp", "swissjazz", "popasia", "nts", "wqxr"]);
+const featuredIds = new Set([
+  "fip", "kexp", "swissjazz", "popasia", "nts", "wqxr", "oroko", "nfrs", "ibero",
+  "ffd131d8-acf9-4190-b6f4-b377624878e1", // La 2x4
+]);
 const modulus = 2147483647;
 let roundSeed = history.state?.roundSeed ?? (1 + Math.floor(Math.random() * (modulus - 1)));
 let worldQueue = buildWorldQueue(roundSeed);

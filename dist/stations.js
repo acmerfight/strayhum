@@ -31,6 +31,11 @@ window.STATIONS = [
     urls: ['https://stream.wqxr.org/wqxr']
   },
   {
+    id: 'oroko', name: 'Oroko Radio', city: 'Accra', country: 'Ghana', genre: 'Highlife, electronic & independent DJs', family: 'Eclectic',
+    lat: 5.56, lon: -0.20, zone: 'Africa/Accra', frequency: 'WEB RADIO',
+    urls: ['https://oroko-radio.radiocult.fm/stream']
+  },
+  {
     id: 'beijing', alias: '北京音乐广播', name: 'Beijing Music Radio', city: 'Beijing', country: 'China', genre: 'Mandopop & classics', family: 'Pop',
     lat: 39.90, lon: 116.41, zone: 'Asia/Shanghai', frequency: '97.4 FM',
     urls: ['https://lhttp.qtfm.cn/live/332/64k.mp3']
