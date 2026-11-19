@@ -6,24 +6,14 @@ window.STATIONS = [
     urls: ['https://icecast.radiofrance.fr/fip-midfi.mp3', 'https://icecast.radiofrance.fr/fip-hifi.aac']
   },
   {
-    id: 'beijing', alias: '北京音乐广播', name: 'Beijing Music Radio', city: 'Beijing', country: 'China', genre: 'Mandopop & classics', family: 'Pop',
-    lat: 39.90, lon: 116.41, zone: 'Asia/Shanghai', frequency: '97.4 FM',
-    urls: ['https://lhttp.qtfm.cn/live/332/64k.mp3']
-  },
-  {
     id: 'kexp', name: 'KEXP', city: 'Seattle', country: 'United States', genre: 'Independent music', family: 'Rock & indie',
     lat: 47.61, lon: -122.33, zone: 'America/Los_Angeles', frequency: '90.3 FM',
     urls: ['https://kexp-mp3-128.streamguys1.com/kexp128.mp3', 'https://kexp.streamguys1.com/kexp160.aac']
   },
   {
-    id: 'nts', name: 'NTS Radio 1', city: 'London', country: 'United Kingdom', genre: 'Underground & experimental', family: 'Eclectic',
-    lat: 51.55, lon: -0.07, zone: 'Europe/London', frequency: 'WEB RADIO',
-    urls: ['https://stream-relay-geo.ntslive.net/stream']
-  },
-  {
-    id: 'nfrs', name: 'SOUND UP NFRS', city: 'Osaka', country: 'Japan', genre: 'Independent music & DJs', family: 'Eclectic',
-    lat: 34.64, lon: 135.50, zone: 'Asia/Tokyo', frequency: 'WEB RADIO',
-    urls: ['https://stream2.rcast.net/70945']
+    id: 'swissjazz', name: 'Radio Swiss Jazz', city: 'Basel', country: 'Switzerland', genre: 'Jazz, soul & blues', family: 'Jazz & soul',
+    lat: 47.56, lon: 7.59, zone: 'Europe/Zurich', frequency: 'DIGITAL RADIO',
+    urls: ['https://stream.srg-ssr.ch/m/rsj/mp3_128', 'https://stream.srg-ssr.ch/srgssr/rsj/aac/192']
   },
   {
     id: 'popasia', name: 'SBS PopAsia', city: 'Sydney', country: 'Australia', genre: 'K-pop, J-pop & C-pop', family: 'Pop',
@@ -31,9 +21,24 @@ window.STATIONS = [
     urls: ['https://sbs-ice.streamguys1.com/sbs-popasia-sbs-web']
   },
   {
+    id: 'nts', name: 'NTS Radio 1', city: 'London', country: 'United Kingdom', genre: 'Underground & experimental', family: 'Eclectic',
+    lat: 51.55, lon: -0.07, zone: 'Europe/London', frequency: 'WEB RADIO',
+    urls: ['https://stream-relay-geo.ntslive.net/stream']
+  },
+  {
     id: 'wqxr', name: 'WQXR', city: 'New York', country: 'United States', genre: 'Classical music', family: 'Classical',
     lat: 40.71, lon: -74.01, zone: 'America/New_York', frequency: '105.9 FM',
     urls: ['https://stream.wqxr.org/wqxr']
+  },
+  {
+    id: 'beijing', alias: '北京音乐广播', name: 'Beijing Music Radio', city: 'Beijing', country: 'China', genre: 'Mandopop & classics', family: 'Pop',
+    lat: 39.90, lon: 116.41, zone: 'Asia/Shanghai', frequency: '97.4 FM',
+    urls: ['https://lhttp.qtfm.cn/live/332/64k.mp3']
+  },
+  {
+    id: 'nfrs', name: 'SOUND UP NFRS', city: 'Osaka', country: 'Japan', genre: 'Independent music & DJs', family: 'Eclectic',
+    lat: 34.64, lon: 135.50, zone: 'Asia/Tokyo', frequency: 'WEB RADIO',
+    urls: ['https://stream2.rcast.net/70945']
   },
   {
     id: 'mix', name: 'Rádio Mix', city: 'São Paulo', country: 'Brazil', genre: 'Brazilian & international hits', family: 'Pop',
@@ -54,11 +59,6 @@ window.STATIONS = [
     id: 'ibero', name: 'IBERO.2', city: 'Mexico City', country: 'Mexico', genre: 'Independent & alternative', family: 'Rock & indie',
     lat: 19.43, lon: -99.13, zone: 'America/Mexico_City', frequency: '90.9 HD2',
     urls: ['https://shaincast.caster.fm:20866/listen.mp3']
-  },
-  {
-    id: 'swissjazz', name: 'Radio Swiss Jazz', city: 'Basel', country: 'Switzerland', genre: 'Jazz, soul & blues', family: 'Jazz & soul',
-    lat: 47.56, lon: 7.59, zone: 'Europe/Zurich', frequency: 'DIGITAL RADIO',
-    urls: ['https://stream.srg-ssr.ch/m/rsj/mp3_128', 'https://stream.srg-ssr.ch/srgssr/rsj/aac/192']
   },
   {
     id: 'sunshine', name: 'SUNSHINE LIVE', city: 'Mannheim', country: 'Germany', genre: 'Melodic techno', family: 'Electronic',
