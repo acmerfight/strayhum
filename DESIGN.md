@@ -21,6 +21,8 @@ The listener can explore freely while a station plays. One city name appears und
 | Arrival | Once the camera settles, the first measured sound sends a light front out from the station. | Attention returns to the point that was selected. |
 | Listening | The station name takes the headline. Fast attacks bend the foreground sheet. Sustained sound carries the underlying pigment forward, and silence lets the surface settle. FIP and KEXP can supply an artist and title during playback. | The broadcaster supplies part of the composition. |
 
+The reach of the same sheet follows the arrangement throughout a station’s continuous stream. An envelope compares recent loudness with a slower baseline and also measures occupied octaves and the density of attacks. A separate spectral balance gently steers the sheet. Sparse passages stay near the city. A sustained build opens toward the horizon. The animation uses the broadcaster’s audio directly and needs no song-boundary or chorus metadata.
+
 ## Signal and accessibility
 
 The audio plays directly from each broadcaster. A Web Audio analyser measures approximately 45–240 Hz, 240–2,500 Hz and 2,500–9,500 Hz. The sculpture also has a slow underlying motion, so it can be explored before pressing Play. If a server declines cross-origin analysis, the player retries the stream directly and hides the live meter. A station can still be unavailable because of its server or the listener's network. [MDN — reading live frequency data](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/getByteFrequencyData)

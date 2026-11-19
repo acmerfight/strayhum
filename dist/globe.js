@@ -41,6 +41,8 @@ class RadioGlobe {
     this.energy = new Float32Array(3);
     this.time = 0;
     this.flowPush = 0;
+    this.openness = 0.42;
+    this.timbre = 0.5;
     this.flowTravel = 0;
     this.tint = 0;
     this.sphere = new SignalSphere(this.canvas, () => this.draw());
@@ -188,7 +190,8 @@ class RadioGlobe {
       if (z <= 0) return;
       const push = this.flowPush,
         travel = this.flowTravel;
-      const extent = this.radius * (0.21 + 0.13 * this.hold);
+      const extent =
+        this.radius * (0.12 + 0.38 * this.openness + 0.11 * this.hold);
       const [snap, swing, sweep] = this.shape;
       const offset =
         this.radius *
@@ -204,7 +207,8 @@ class RadioGlobe {
       c.rotate(
         -0.51 +
           (0.14 + 0.25 * swing) * Math.sin(travel) +
-          0.3 * sweep * this.hold,
+          0.3 * sweep * this.hold +
+          (this.timbre - 0.5) * 0.75,
       );
       c.scale(1.5 + 0.48 * sweep, 0.82 - 0.32 * snap + 0.17 * sweep);
       const halo = c.createRadialGradient(0, 0, 0, 0, 0, extent);
@@ -315,6 +319,13 @@ class RadioGlobe {
         const measured = responsive
           ? this.signal.sample(delta, this.score)
           : null;
+        // Crossfade from the resting sculpture when audio becomes available.
+        const opening = responsive ? this.signal.openness : 0.42;
+        this.openness +=
+          (opening - this.openness) * (1 - Math.exp(-delta / 0.48));
+        this.timbre +=
+          ((responsive ? this.signal.timbre : 0.5) - this.timbre) *
+          (1 - Math.exp(-delta / 0.65));
         this.flowPush = responsive
           ? this.signal.displacement
           : this.flowPush * Math.exp(-delta * 5);

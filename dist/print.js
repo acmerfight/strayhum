@@ -22,7 +22,7 @@ class SignalSphere {
       uniform sampler2D plate;
       uniform vec2 center; uniform float height, radius, lat, lon;
       uniform vec3 energy, beacon, phrase;uniform float firstLight;uniform float phase, tint;
-      uniform vec2 current; uniform vec3 style; uniform float trail;
+      uniform vec2 current, passage; uniform vec3 style; uniform float trail;
       // A continuous three-dimensional pigment field stays attached to the globe.
       float hash(vec3 p) { p=fract(p*.3183099+vec3(.17,.29,.43)); p*=17.; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
       float noise3(vec3 p) {
@@ -46,10 +46,16 @@ class SignalSphere {
 
         vec3 east=normalize(cross(vec3(0.,1.,.005),beacon));
         vec3 north=cross(beacon,east);
-        vec3 tangent=normalize(.84*east+.54*north);
+        float opening=smoothstep(.04,.85,passage.x);
+        float bearing=.57+(passage.y-.5)*1.30+.26*(opening-.42);
+        vec3 tangent=cos(bearing)*east+sin(bearing)*north;
         vec3 normal=cross(beacon,tangent);
         float u=dot(world,tangent), v=dot(world,normal);
-        float local=smoothstep(-.4,.85,dot(world,beacon));
+        // One continuous sheet: a quiet phrase sits close to the station.
+        // A sustained build carries its outer edge towards the horizon.
+        float reach=mix(.41,1.75,opening);
+        float local=exp(-distance*distance/(reach*reach));
+        local*=smoothstep(-.72,.22,dot(world,beacon));
         float push=current.x, travel=current.y;
         // Move pigment through a curved channel in the station's tangent plane.
         // The foreground moves farther than the layer beneath it.
@@ -65,7 +71,8 @@ class SignalSphere {
         bend=mix(bend,.48*sin(3.15*axis+.78*sin(.78*travel)+1.15*recoil),swing);
         bend=mix(bend,.52*axis*axis-.24*axis+.16*sin(.54*travel+axis),sweep);
         stroke+=influence*(snap*.16*push+swing*.20*trail+sweep*(.47*phrase.y-.29*push));
-        float fold=v-bend+.09-stroke;
+        bend*=.58+.85*opening;
+        float fold=v-bend+.09-stroke*(.58+.87*opening)-.18*(opening-.42)*local;
         vec3 q=world*1.47+vec3(.85,-.27,.4);
         q-=influence*(normal*(.54*push+.11*phrase.y)+tangent*.18*sin(travel));
         q+=local*(tangent*(.54*recoil-.24*sweep*phrase.y)+normal*.15*sweep*axis*phrase.y);
@@ -95,11 +102,11 @@ class SignalSphere {
         vec3 surface=mix(sea,pigment*(.44+.47*daylight),land);
         // A broad translucent sheet and its folded lip give the beat a visible
         // edge. The coast mask stays fixed while the sheet slips over it.
-        float width=1.-.46*snap+.27*swing+.85*sweep;
+        float width=(1.-.46*snap+.27*swing+.85*sweep)*(.50+1.05*opening);
         float edgeField=fold/width+(.12-.07*snap)*(mist-.5);
         float body=smoothstep(-.49,-.11,edgeField)*(1.-smoothstep(-.025,.055,edgeField));
         float lip=exp(-abs(edgeField+.025)*(19.+10.*snap-4.*sweep));
-        float veil=local*(.70+.30*daylight)*(.80+.20*mist);
+        float veil=local*(.70+.30*daylight)*(.80+.20*mist)*(.60+.48*opening);
         vec3 silk=mix(vec3(.28,.55,.57),mix(opal,amber,.34),.33+.44*lip);
         surface=mix(surface,silk,body*veil*(.38+.28*land));
         surface+=veil*lip*(.16+.24*push+.09*energy.z)*mix(opal,amber,.52);
@@ -157,6 +164,7 @@ class SignalSphere {
       "phase",
       "firstLight",
       "current",
+      "passage",
       "style",
       "trail",
       "phrase",
@@ -204,6 +212,7 @@ class SignalSphere {
           : 1;
       g.uniform1f(u.firstLight, first);
       g.uniform2f(u.current, view.flowPush, view.flowTravel);
+      g.uniform2f(u.passage, view.openness, view.timbre);
       g.uniform3fv(u.style, view.shape);
       g.uniform1f(u.trail, view.trail);
       g.uniform3f(

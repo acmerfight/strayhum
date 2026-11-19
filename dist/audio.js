@@ -78,6 +78,10 @@ class LiveSignal {
     this.sampled = false;
     this.lowFloor = 0;
     this.refractory = 0;
+    this.openness = 0;
+    this.timbre = 0.5;
+    this.recentDb = null;
+    this.accentDensity = 0;
     this.displacement = 0;
     this.velocity = 0;
     this.previous.fill(0);
@@ -90,6 +94,63 @@ class LiveSignal {
     this.analyser = null;
     this.bands.fill(0);
     this.resetEnvelope();
+  }
+  followPassage(rms, hit, hz, dt) {
+    // Compare equal-width octaves, so treble does not get more weight simply
+    // because it occupies more FFT bins. Ignore energy far below the loudest band.
+    let peak = 0,
+      sum = 0,
+      weightedTone = 0,
+      sumSquares = 0;
+    for (let octave = 0; octave < 8; octave++) {
+      const start = Math.max(1, Math.round((48 * 2 ** octave) / hz));
+      const end = Math.min(
+        this.bins.length,
+        Math.max(start + 1, Math.round((96 * 2 ** octave) / hz)),
+      );
+      let maxBin = 0;
+      for (let i = start; i < end; i++) maxBin = Math.max(maxBin, this.bins[i]);
+      const power = (maxBin / 255) ** 6;
+      peak = Math.max(peak, power);
+      sum += power;
+      sumSquares += power * power;
+      weightedTone += (power * octave) / 7;
+    }
+    const db = 20 * Math.log10(Math.max(0.00001, rms));
+    const audible = Math.min(1, Math.max(0, (db + 59) / 18));
+    const level = Math.min(1, Math.max(0, (db + 48) / 34));
+    if (this.recentDb === null && audible > 0.1) this.recentDb = db;
+    const contrast =
+      this.recentDb === null
+        ? 0
+        : Math.max(-1, Math.min(1, (db - this.recentDb) / 14));
+    if (audible > 0.1)
+      this.recentDb += (db - this.recentDb) * (1 - Math.exp(-dt / 15));
+    // Effective number of active octaves, independent of overall level.
+    const breadth =
+      sumSquares > 0 ? Math.max(0, ((sum * sum) / sumSquares - 1) / 7) : 0;
+    this.accentDensity =
+      this.accentDensity * Math.exp(-dt / 1.9) + (hit ? 0.23 : 0);
+    const target =
+      audible *
+      Math.min(
+        1,
+        Math.max(
+          0,
+          0.48 * level +
+            0.37 * breadth +
+            0.2 * Math.min(1, this.accentDensity) +
+            0.2 * contrast -
+            0.09,
+        ),
+      );
+    this.openness +=
+      (target - this.openness) *
+      (1 - Math.exp(-dt / (target > this.openness ? 1.85 : 2.7)));
+    if (peak > 0.001 && audible > 0.1) {
+      const tone = weightedTone / sum;
+      this.timbre += (tone - this.timbre) * (1 - Math.exp(-dt / 3.1));
+    }
   }
   sample(seconds = 1 / 30, score = motionScores.default) {
     if (!this.analyser) return this.bands;
@@ -128,7 +189,8 @@ class LiveSignal {
     const accent = Math.min(1, Math.max(onset, bassOnset));
     this.lowFloor += (lowFlux - this.lowFloor) * (1 - Math.exp(-dt / 0.65));
     this.refractory = Math.max(0, this.refractory - dt);
-    if (accent > 0.105 && this.refractory === 0) {
+    const hit = accent > 0.105 && this.refractory === 0;
+    if (hit) {
       this.velocity = Math.min(
         15 * score.impulse,
         this.velocity + (4.2 + accent * 10.2) * score.impulse,
@@ -149,6 +211,7 @@ class LiveSignal {
         Math.exp(
           -dt / (this.level > this.sustain ? score.rise : score.release),
         ));
+    this.followPassage(rms, hit, hz, dt);
     this.previous.set(this.bins);
     this.sampled = true;
     const ranges = [
