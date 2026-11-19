@@ -913,3 +913,10 @@ dialog::backdrop {
 .row + .row {
   border-top: 1px solid #ffffff09;
 }
+@media (max-width: 700px), (max-aspect-ratio: 4/5) {
+  .dial { margin-top: 22px; }
+  body[data-playback="playing"] #status {
+    top: calc(100% + 4px);
+    bottom: auto;
+  }
+}
