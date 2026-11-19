@@ -32,6 +32,20 @@ const trackFeeds = {
         return { title: play.song, artist: play.artist, expires };
     },
   },
+  swissjazz: {
+    url: "https://ssatr.playlist-api.deliver.media/graphql?" + new URLSearchParams({
+      query: `{ channel(id: "0191e9e4-db19-77eb-8bf1-92d9f3c9e4c5") {
+        playingnow { current { start_time duration_ms metadata { title artist } } }
+      } }`,
+    }),
+    read(data, now) {
+      const song = data.data?.channel?.playingnow?.current;
+      const start = Date.parse(song?.start_time);
+      const expires = start + song?.duration_ms;
+      if (Number.isFinite(expires) && start <= now && now < expires)
+        return { title: song.metadata?.title, artist: song.metadata?.artist, expires };
+    },
+  },
 };
 class TrackCredit {
   constructor(element) {
@@ -51,6 +65,7 @@ class TrackCredit {
     if (!feed) return;
     const controller = (this.controller = new AbortController());
     const refresh = async () => {
+      let nextPoll = 20000;
       try {
         const response = await fetch(feed.url, {
           signal: AbortSignal.any([
@@ -69,17 +84,20 @@ class TrackCredit {
         this.element.textContent = valid
           ? track.title + " — " + track.artist
           : "";
-        if (valid)
+        if (valid) {
+          const remaining = Math.max(0, track.expires - Date.now());
           this.expiry = setTimeout(
             () => {
               this.element.hidden = true;
             },
-            Math.max(0, track.expires - Date.now()),
+            remaining,
           );
+          nextPoll = Math.min(nextPoll, remaining + 500);
+        }
       } catch {
         if (!controller.signal.aborted) this.element.hidden = true;
       }
-      if (!controller.signal.aborted) this.poll = setTimeout(refresh, 20000);
+      if (!controller.signal.aborted) this.poll = setTimeout(refresh, nextPoll);
     };
     refresh();
   }
