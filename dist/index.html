@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#06090c"><title>地球电台 · Aether FM</title><link rel="stylesheet" href="style.css"><script defer src="stations.js"></script><script defer src="globe.js"></script><script defer src="app.js"></script></head>
+<body><header><h1><span class="logo" aria-hidden="true"></span>地球电台</h1><button id="browse" aria-label="查找电台"><span data-icon="search"></span>找电台</button></header>
+<main><div id="sky" class="sky" role="group" aria-label="地球仪"><canvas id="globe" tabindex="0" aria-label="拖动地球旋转，滚动或捏合缩放；键盘方向键旋转，加减号缩放"></canvas><div id="pins"></div></div>
+<div class="dock"><section class="player" aria-label="电台播放器"><button id="play" aria-label="播放"></button><div class="info"><h2 id="name"></h2><div class="detail"><span id="status" role="status"></span><span id="meta"></span></div></div><button id="next" aria-label="下一个电台" title="下一个电台"><span data-icon="next"></span></button></section><p>拖动旋转<span>·</span>点选电台</p></div></main>
+<dialog id="picker"><div class="searchbar"><span data-icon="search"></span><input type="search" id="search" aria-label="搜索电台或城市" placeholder="搜索电台、城市"><button id="close" aria-label="关闭电台列表">×</button></div><div id="list"></div></dialog>
+</body></html>
