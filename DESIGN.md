@@ -15,13 +15,16 @@ You stand on a rooftop on the edge of the station's town and look out. Everythin
 
 Amber still means only "signal". Type is Bodoni Moda for names and Geist for everything else.
 
+**Development.** Everything is rendered in linear light and developed like a print: ACES, a palette that draws cool colour toward grey and keeps warm light (sunsets, lamps) in full colour, split toning, lifted blacks, halation around bright light, grain and a vignette. One grade for every place and time of day, so the work reads as one series of photographs.
+
 ## Motion score
 
 | Moment | What happens | Why |
 | --- | --- | --- |
 | Arrival on the page | Black, then the place fades up once its land has loaded. | You open your eyes somewhere. |
-| Drift, near | The view rises into cloud and comes down over the next place. | A short hop. |
-| Drift, far | The view rises through cloud to orbit; the Earth turns below with its real terminator and city lights, an amber line drawing the route; then down through cloud into the next place. "Kathmandu — Lisbon", the distance counting up and the hours between stand in the sky. | You feel how far you have been taken. |
+| Opening | The Earth, whole, turns to the first station; the view comes in and down through cloud. | The product in one shot: somewhere on this Earth, now. |
+| Drift | The view rises through cloud until the Earth is a ball. The camera stays still and the Earth itself turns, with its real terminator and city lights, an amber line drawing the route from where you were; the destination comes round to face you, and the view goes in and down. "Seattle — Lisbon", the distance counting up and the hours between stand in the sky. | You see the Earth turn, and how far you have been taken. |
+| The Earth by hand | The Earth button (E), or pulling back with the wheel or a pinch, lifts the view off to the Earth while the music plays on. Drag to turn it, with inertia; scroll or pinch to come closer. Every station is a small bone-white light; the one playing is amber and breathes; kept ones are amber. Hovering a light names its city, time, station and sound; selecting it goes there. On touch a first tap names it and offers Listen. Back to the city, or Esc, comes down again. | Chance first; the whole map when you want it. |
 | Landing | The stream is held under the static until the view has landed, then crossfades in. | The place and the music arrive together. |
 | Hold Drift | Straight up to orbit; the Earth turns below, gathering speed; each city passed comes up with its time, with a carrier tone through the static. Letting go descends to the station below. | Chance you can steer by feel. |
 | A signal fades | "The signal faded · drifting on", then Stray Hum drifts by itself. | A dead stream is part of the radio. |

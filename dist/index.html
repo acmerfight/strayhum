@@ -36,6 +36,12 @@
       <p class="measure"><span id="route-km"></span><span id="route-time"></span></p>
     </div>
     <div class="passing" id="passing" aria-hidden="true"><span class="city"></span><time></time></div>
+    <div class="finder" id="finder">
+      <div class="box">
+        <span class="city"></span><span class="station"></span><span class="sound"></span
+        ><button class="go" type="button">Listen</button>
+      </div>
+    </div>
 
     <header class="top">
       <a class="wordmark" href="./" aria-label="Stray Hum">
@@ -47,9 +53,15 @@
         <span>Stray Hum</span>
       </a>
       <p class="tagline">chance encounters with music from all over the world</p>
+      <div class="tools">
+      <button id="earth" class="quiet" type="button" aria-pressed="false" aria-keyshortcuts="E" title="Turn the Earth and find stations yourself">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.2" /><path d="M3.8 12h16.4M12 3.8c2.4 2.3 3.6 5 3.6 8.2s-1.2 5.9-3.6 8.2c-2.4-2.3-3.6-5-3.6-8.2s1.2-5.9 3.6-8.2Z" /></svg>
+        <span id="earth-label">Earth</span>
+      </button>
       <button id="log-open" class="quiet" type="button" aria-haspopup="dialog">
         <span>Kept</span><span id="kept-count" class="count"></span>
       </button>
+      </div>
     </header>
 
     <section class="plate" aria-live="polite" aria-atomic="true">
@@ -100,7 +112,7 @@
       <h2 class="section">Settings</h2>
       <label class="toggle"><input id="static-toggle" type="checkbox" /><span>Static between stations</span></label>
       <label class="toggle"><input id="motion-toggle" type="checkbox" /><span>Motion</span></label>
-      <p class="keys">Space listen or pause · D drift, hold D to turn the dial · K keep</p>
+      <p class="keys">Space listen or pause · D drift, hold D to turn the dial · E the Earth · K keep</p>
       <p class="about">
         Each station is small or independent, and was checked to be on air when this list was made. Some will have
         faded since; Stray Hum drifts on when that happens. What you see is the land around the station under its sky

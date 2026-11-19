@@ -35,6 +35,13 @@ outlook.onPass = (i, speed) => {
   receiver.pass(speed);
   showPassing(i);
 };
+outlook.onHover = (i) => showFinder(i, false);
+outlook.onPick = (i, touch) => {
+  // A tap first names the light; selecting it again, or Listen, goes there.
+  if (touch && finder.i !== i) showFinder(i, true);
+  else go(i);
+};
+outlook.onWantEarth = () => openEarth();
 
 function setState(next) {
   state = next;
@@ -47,6 +54,7 @@ function setState(next) {
 /** Tunes to a station: the window travels there while the static plays, and the sound is let
     through only when it lands, so the sky and the music arrive together. */
 function go(i) {
+  leaveEarthView();
   receiver.start();
   clearTimeout(driftTimer);
   credit.clear();
@@ -233,6 +241,68 @@ function enterPlate() {
   conditions.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 520, easing: ease, fill: 'backwards' });
 }
 
+/* The Earth by hand: turn it, find a light, listen ----------------------------------- */
+
+const finder = { i: null, touch: false };
+
+function openEarth() {
+  if (outlook.exploring || !outlook.ok) return;
+  outlook.explore();
+  document.body.dataset.view = 'earth';
+  $('earth').setAttribute('aria-pressed', 'true');
+  $('earth-label').textContent = `Back to ${stations[current].city}`;
+  hint.after('earth');
+}
+
+/** Back down to the station that is playing; the music never stopped. */
+function closeEarth() {
+  if (!outlook.exploring) return;
+  leaveEarthView();
+  const i = current;
+  const { estimate, landed } = outlook.returnTo(i);
+  setVoyage(i, i, estimate);
+  landed.then(() => weatherAt(stations[i]).then((w) => current === i && settleWeather(i, w)));
+}
+
+function leaveEarthView() {
+  delete document.body.dataset.view;
+  $('earth').setAttribute('aria-pressed', 'false');
+  $('earth-label').textContent = 'Earth';
+  showFinder(null);
+}
+
+function showFinder(i, touch) {
+  finder.i = i;
+  finder.touch = touch;
+  const el = $('finder');
+  el.classList.toggle('touch', Boolean(touch));
+  if (i === null) {
+    el.classList.remove('shown');
+    return;
+  }
+  const s = stations[i];
+  el.querySelector('.city').textContent = `${s.city} · ${clockAt(s)}`;
+  el.querySelector('.station').textContent = s.name.replace(/\s[–—-]\s/g, ' · ');
+  el.querySelector('.sound').textContent = s.genres.join(' · ');
+  placeFinder();
+  el.classList.add('shown');
+}
+
+function placeFinder() {
+  if (finder.i === null) return;
+  const at = outlook.screenOf(finder.i);
+  const el = $('finder');
+  if (!at) {
+    el.classList.remove('shown');
+    return;
+  }
+  el.style.transform = `translate(${Math.round(at[0])}px, ${Math.round(at[1])}px)`;
+  el.classList.toggle('left', at[0] > innerWidth - 300);
+}
+
+$('finder').querySelector('.go').addEventListener('click', () => finder.i !== null && go(finder.i));
+$('earth').onclick = () => (outlook.exploring ? closeEarth() : openEarth());
+
 /* In the sky: the voyage, and the cities the dial passes ---------------------------- */
 
 /** "Accra → Tokyo", with the distance counting up as the window travels. */
@@ -278,8 +348,9 @@ function hidePassing() {
 /* Memory: kept stations and tonight's route ----------------------------------- */
 
 function refreshMemory() {
-  const n = memory.keptIndices().length;
-  $('kept-count').textContent = n ? String(n) : '';
+  const kept = memory.keptIndices();
+  $('kept-count').textContent = kept.length ? String(kept.length) : '';
+  outlook.markKept(new Set(kept.map((k) => k.i)));
 }
 
 function renderLog() {
@@ -351,6 +422,10 @@ const hint = {
       this.dial = true;
       localStorage.setItem('strayhum.dial', '1');
       this.hide();
+    }
+    if (moment === 'earth' && !this.earth) {
+      this.earth = true;
+      this.show('Turn the Earth. Every light is a station; select one to listen.', 7000);
     }
     if (moment === 'arrive' && this.seen && !this.dial) this.show('Hold Drift to turn the world past the window.', 7000);
     if (this.seen) return;
@@ -424,6 +499,10 @@ addEventListener('keydown', (e) => {
     drift();
   } else if (e.key === 'k' || e.key === 'K') {
     keep();
+  } else if (e.key === 'e' || e.key === 'E') {
+    outlook.exploring ? closeEarth() : openEarth();
+  } else if (e.key === 'Escape' && outlook.exploring) {
+    closeEarth();
   }
 });
 addEventListener('keyup', (e) => {
@@ -456,6 +535,7 @@ function frame(now) {
   // Fallback without WebGL2: the page itself carries the sky's colours.
   if (!outlook.ok) paintFallback(light);
   drawVoyage();
+  placeFinder();
   document.body.style.setProperty('--level', (sound?.level ?? 0).toFixed(3));
   if (!document.hidden) requestAnimationFrame(frame);
 }

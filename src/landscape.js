@@ -327,53 +327,97 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-/* Overlay: the veil you pass through between places, rain and snow, grain and vignette. ------ */
+/* Post: the scene is rendered in linear light, then developed like film. ------------------- */
 
-const OVERLAY_VERTEX = /* glsl */ `
+const SCREEN_VERTEX = /* glsl */ `
 varying vec2 vUv;
 void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
-const OVERLAY_FRAGMENT = /* glsl */ `
+// The brightest light, the seed of halation.
+const BRIGHT_FRAGMENT = /* glsl */ `
 varying vec2 vUv;
+uniform sampler2D source;
+uniform float exposure;
+void main() {
+  vec3 c = texture2D(source, vUv).rgb * exposure;
+  float l = max(c.r, max(c.g, c.b));
+  gl_FragColor = vec4(c * smoothstep(0.55, 1.6, l), 1.0);
+}`;
+
+const BLUR_FRAGMENT = /* glsl */ `
+varying vec2 vUv;
+uniform sampler2D source;
+uniform vec2 step;
+void main() {
+  vec3 c = texture2D(source, vUv).rgb * 0.227;
+  c += (texture2D(source, vUv + step * 1.385).rgb + texture2D(source, vUv - step * 1.385).rgb) * 0.316;
+  c += (texture2D(source, vUv + step * 3.231).rgb + texture2D(source, vUv - step * 3.231).rgb) * 0.07;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
+// The print: ACES, a restrained palette that keeps only warm light in full colour, split toning,
+// lifted blacks, halation, grain, vignette; then the veil you pass through, rain and snow.
+const GRADE_FRAGMENT = /* glsl */ `
+varying vec2 vUv;
+uniform sampler2D source;
+uniform sampler2D glow;
 uniform vec2 res;
+uniform float exposure;
 uniform float time;
 uniform float veil;
 uniform vec3 veilColour;
 uniform float rain;
 uniform float snow;
 ${NOISE_GLSL}
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 toSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 void main() {
+  vec3 hdr = texture2D(source, vUv).rgb * exposure;
+  vec3 halo = texture2D(glow, vUv).rgb;
+  // Halation: light spreading in the emulsion, redder at its edge.
+  hdr += halo * vec3(0.9, 0.62, 0.42) * 0.55;
+  vec3 c = aces(hdr);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  // Cool colour is drawn toward grey; warm light keeps its colour.
+  float warm = smoothstep(0.0, 0.18, c.r - c.b);
+  c = mix(vec3(l), c, mix(0.32, 0.9, warm));
+  c *= mix(vec3(0.9, 0.95, 1.07), vec3(1.04, 1.0, 0.93), smoothstep(0.04, 0.55, l));
+  c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
+  c = mix(vec3(0.011, 0.013, 0.019), vec3(0.985, 0.975, 0.95), c);
+  // Rain falls as fine slanted strokes, snow as slow points.
   float aspect = res.x / res.y;
-  vec3 add = vec3(0.0);
   if (rain > 0.0) {
     vec2 q = vec2(vUv.x * aspect * 90.0 + vUv.y * 18.0, vUv.y * 2.2 + time * 2.6);
     float column = floor(q.x);
     float y = fract(q.y + hash(vec2(column, 1.0)) * 9.0);
     float drop = step(0.9, hash(vec2(column, floor(q.y + hash(vec2(column, 1.0)) * 9.0)))) * smoothstep(0.0, 0.3, y) * smoothstep(1.0, 0.55, y);
-    add += vec3(0.7, 0.75, 0.82) * drop * smoothstep(0.5, 0.0, abs(fract(q.x) - 0.5) * 2.0) * rain * 0.07;
+    c += vec3(0.6, 0.64, 0.7) * drop * smoothstep(0.5, 0.0, abs(fract(q.x) - 0.5) * 2.0) * rain * 0.06;
   }
   if (snow > 0.0) {
     vec2 q = vec2(vUv.x * aspect * 26.0 + sin(time * 0.3 + vUv.y * 6.0) * 0.4, vUv.y * 26.0 + time * 1.2);
     vec2 cell = floor(q);
     vec2 f = fract(q) - 0.5 - (vec2(hash(cell), hash(cell + 2.0)) - 0.5) * 0.6;
-    add += vec3(0.9) * smoothstep(0.09, 0.03, length(f)) * step(0.6, hash(cell + 5.0)) * snow * 0.3;
+    c += vec3(0.85) * smoothstep(0.09, 0.03, length(f)) * step(0.6, hash(cell + 5.0)) * snow * 0.25;
   }
-  // Grain, so the image reads as a print rather than a render.
-  add += (hash(gl_FragCoord.xy + fract(time) * 100.0) - 0.5) * 0.018;
-  vec2 c = vUv - 0.5;
-  float vignette = dot(c, c) * 0.42;
-  // Premultiplied: rain and grain add light, the veil and the vignette cover what is behind.
-  gl_FragColor = vec4(veil * veilColour + (1.0 - veil) * add, clamp(veil + vignette * (1.0 - veil), 0.0, 1.0));
+  vec2 v = vUv - 0.5;
+  c *= 1.0 - dot(v, v) * 0.55;
+  c = mix(c, veilColour, veil);
+  c = toSrgb(clamp(c, 0.0, 1.0));
+  // Grain, finer than a pixel's worth of tone, so the image reads as a print.
+  c += (hash(gl_FragCoord.xy + fract(time * 7.0) * 113.0) - 0.5) * 0.028;
+  gl_FragColor = vec4(c, 1.0);
 }`;
 
 /* The Earth from orbit: the day side in its colours, the night side in its lights, the air. --- */
 
 const EARTH_VERTEX = /* glsl */ `
 varying vec3 vNormal;
+varying vec3 vWorldNormal;
 varying vec3 vWorld;
 ${COMMON_VERTEX}
 void main() {
   vNormal = normalize(position);
+  vWorldNormal = normalize(mat3(modelMatrix) * position);
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorld = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
@@ -382,10 +426,12 @@ void main() {
 
 const EARTH_FRAGMENT = /* glsl */ `
 varying vec3 vNormal;
+varying vec3 vWorldNormal;
 varying vec3 vWorld;
 uniform sampler2D day;
 uniform sampler2D lightsMap;
 uniform vec3 sun;
+uniform vec3 eye;
 uniform float level;
 #include <logdepthbuf_pars_fragment>
 const float PI = 3.141592653589793;
@@ -394,37 +440,83 @@ void main() {
   vec3 n = normalize(vNormal);
   vec2 uv = vec2(atan(n.x, n.z) / (2.0 * PI) + 0.5, asin(clamp(n.y, -1.0, 1.0)) / PI + 0.5);
   vec3 albedo = texture2D(day, uv).rgb;
-  // Quieter than the satellite image: colour drawn down toward its grey.
-  albedo = mix(vec3(dot(albedo, vec3(0.3, 0.59, 0.11))), albedo, 0.62) * 0.9;
   float lit = dot(n, sun);
-  float dayside = smoothstep(-0.08, 0.18, lit);
-  vec3 v = normalize(vWorld - cameraPosition);
-  float rim = pow(1.0 - max(dot(-v, n), 0.0), 3.0);
-  vec3 col = albedo * max(lit, 0.0) * 1.15 * dayside;
-  col += vec3(0.25, 0.42, 0.75) * rim * 0.35 * smoothstep(-0.2, 0.4, lit);
-  // Dusk along the terminator.
-  col += vec3(0.6, 0.28, 0.1) * exp(-pow(lit / 0.07, 2.0)) * 0.12;
+  vec3 col = albedo * max(lit, 0.0) * 1.35;
+  // The sea catches the sun.
+  float sea = smoothstep(0.08, 0.02, albedo.r + albedo.g * 0.5 - albedo.b * 0.6);
+  vec3 toEye = normalize(eye - n);
+  col += vec3(1.0, 0.9, 0.75) * pow(max(dot(reflect(-sun, n), toEye), 0.0), 900.0) * sea * 0.35 * step(0.0, lit);
   float lights = texture2D(lightsMap, uv).r;
-  col += vec3(1.0, 0.62, 0.3) * pow(lights, 1.3) * (1.0 - smoothstep(-0.12, 0.08, lit)) * (0.55 + 0.25 * level);
+  col += vec3(1.0, 0.6, 0.28) * pow(lights, 1.25) * (1.0 - smoothstep(-0.1, 0.06, lit)) * (1.6 + 0.8 * level);
+  vec3 v = normalize(vWorld - cameraPosition);
+  float rim = pow(1.0 - max(dot(-v, normalize(vWorldNormal)), 0.0), 4.0);
+  col += vec3(0.3, 0.5, 0.9) * rim * 0.5 * smoothstep(-0.2, 0.3, lit);
+  // Airglow: the night side keeps a faint edge, so the whole ball reads against space.
+  col += vec3(0.05, 0.08, 0.13) * pow(rim, 1.6) * (1.0 - smoothstep(-0.2, 0.3, lit));
   gl_FragColor = vec4(col, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
 }`;
 
 const AIR_FRAGMENT = /* glsl */ `
 varying vec3 vNormal;
+varying vec3 vWorldNormal;
 varying vec3 vWorld;
 uniform vec3 sun;
 #include <logdepthbuf_pars_fragment>
 void main() {
   #include <logdepthbuf_fragment>
-  vec3 n = normalize(vNormal);
   vec3 v = normalize(vWorld - cameraPosition);
-  float edge = pow(1.0 - abs(dot(v, n)), 6.0);
-  float lit = smoothstep(-0.25, 0.4, dot(n, sun));
-  gl_FragColor = vec4(vec3(0.32, 0.55, 1.0) * edge * lit * 1.4, edge * lit);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
+  float edge = pow(1.0 - abs(dot(v, normalize(vWorldNormal))), 5.0);
+  float lit = dot(normalize(vNormal), sun);
+  vec3 tint = mix(vec3(0.85, 0.45, 0.25), vec3(0.35, 0.6, 1.0), smoothstep(-0.02, 0.2, lit));
+  float day = smoothstep(-0.12, 0.15, lit);
+  gl_FragColor = vec4(tint * edge * (day * 1.1 + 0.12), 1.0);
+}`;
+
+// Points on the globe: where you were, where you are going, and the needle while the dial turns.
+const MARK_VERTEX = /* glsl */ `
+attribute float size;
+attribute float kind;
+varying float vKind;
+uniform float dpr;
+uniform float zoom;
+${COMMON_VERTEX}
+void main() {
+  vKind = kind;
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  // Hidden once it turns to the far side.
+  float facing = dot(normalize(world.xyz), normalize(cameraPosition - world.xyz));
+  gl_Position = projectionMatrix * viewMatrix * world;
+  // Stations grow a little as the Earth comes closer; route marks and the needle keep their size.
+  gl_PointSize = facing > 0.0 ? size * dpr * (kind > 2.5 ? zoom : 1.0) : 0.0;
+  #include <logdepthbuf_vertex>
+}`;
+
+const MARK_FRAGMENT = /* glsl */ `
+varying float vKind;
+uniform float time;
+uniform float opacity;
+uniform float stations;
+#include <logdepthbuf_pars_fragment>
+void main() {
+  #include <logdepthbuf_fragment>
+  float r = length(gl_PointCoord - 0.5) * 2.0;
+  vec3 amber = vec3(1.0, 0.62, 0.28) * 2.2;
+  float a;
+  // 3: a station, 4: one you kept, 5: the one playing, 6: the one under your pointer.
+  if (vKind > 5.5) {
+    gl_FragColor = vec4(vec3(1.4, 1.36, 1.25) * (smoothstep(0.5, 0.3, r) + smoothstep(0.1, 0.0, abs(r - 0.85))) * stations, 1.0);
+    return;
+  }
+  if (vKind > 4.5) a = smoothstep(0.42, 0.25, r) + smoothstep(0.1, 0.0, abs(r - 0.4 - 0.5 * fract(time * 0.5))) * (1.0 - fract(time * 0.5));
+  else if (vKind > 3.5) a = smoothstep(0.5, 0.3, r) * 0.9;
+  else if (vKind > 2.5) {
+    gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * smoothstep(0.55, 0.15, r) * 0.75 * stations, 1.0);
+    return;
+  }
+  else if (vKind > 1.5) a = smoothstep(0.08, 0.0, abs(r - 0.82));
+  else if (vKind > 0.5) a = smoothstep(0.42, 0.25, r) + smoothstep(0.1, 0.0, abs(r - 0.5 - 0.45 * fract(time * 0.6))) * (1.0 - fract(time * 0.6));
+  else a = smoothstep(0.42, 0.25, r) * 0.8;
+  gl_FragColor = vec4(amber * a * opacity, 1.0);
 }`;
 
 /* Geography ---------------------------------------------------------------------------------- */
@@ -683,7 +775,12 @@ function sampleLights(canvas, tx, ty) {
   return sum / (px.length / 4);
 }
 
-/* The window ---------------------------------------------------------------------------------- */
+/* The view ------------------------------------------------------------------------------------ */
+
+// Heights above the surface in Earth radii: below NEAR the globe image is too coarse to show, so
+// the view passes through cloud there.
+const NEAR = 0.035;
+const CLEAR_OF_CLOUD = 0.11;
 
 class Outlook {
   constructor(stations) {
@@ -696,24 +793,223 @@ class Outlook {
     this.rings = [];
     this.level = 0;
     this.reveal = 0;
-    this.veil = 1;
     this.tone = 'dark';
     this.passing = null;
     this.places = new Map();
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     try {
-      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
     } catch {
       this.renderer = null;
       return;
     }
-    const r = this.renderer;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.6;
-    r.autoClear = false;
+    this.renderer.autoClear = false;
+    this.kept = new Set();
     this.build();
     this.resize();
     new ResizeObserver(() => this.resize()).observe(document.documentElement);
+    this.input();
+  }
+
+  /** Which stations are kept, to be shown in amber on the globe. */
+  markKept(kept) {
+    this.kept = kept;
+    this.paintLights();
+  }
+
+  paintLights() {
+    if (!this.ok) return;
+    this.lightKinds.forEach((_, i) => (this.lightKinds[i] = i === this.hovered ? 6 : i === this.current ? 5 : this.kept.has(i) ? 4 : 3));
+    this.stationLights.geometry.attributes.kind.needsUpdate = true;
+  }
+
+  /* Turning the Earth by hand ------------------------------------------------------------- */
+
+  /** Out to where the Earth is a ball, to be turned by hand. The music keeps playing. */
+  explore() {
+    this.wander = null;
+    this.journey = null;
+    this.browse = { start: performance.now(), rise: this.mode === 'orbit' ? 0 : 900, from: this.altitude ?? NEAR, altitude: this.altitude ?? NEAR, target: 1.55, sub: this.place, vx: 0, vy: 0 };
+  }
+
+  get exploring() {
+    return Boolean(this.browse);
+  }
+
+  /** Back down to the station that is playing, without retuning. */
+  returnTo(i) {
+    this.browse = null;
+    this.hover(null);
+    return this.fly(i);
+  }
+
+  browseView(now, dt) {
+    const b = this.browse;
+    const t = now - b.start;
+    if (t < b.rise) {
+      const u = t / b.rise;
+      return { mode: 'ground', station: this.shownStation ?? this.current ?? 0, altitude: 24000 * u * u, pitch: -70 * smoothstep(0, 1, u), veil: smoothstep(0.45, 1, u) };
+    }
+    b.altitude += (b.target - b.altitude) * Math.min(1, dt * 3.2);
+    if (!this.dragging && (b.vx || b.vy)) {
+      this.turnBy(b.vx * dt, b.vy * dt);
+      const decay = Math.exp(-dt * 2.4);
+      b.vx *= decay;
+      b.vy *= decay;
+      if (Math.hypot(b.vx, b.vy) < 0.002) b.vx = b.vy = 0;
+    }
+    this.place = b.sub;
+    this.altitude = b.altitude;
+    return { mode: 'orbit', sub: b.sub, altitude: b.altitude, veil: 1 - smoothstep(NEAR, CLEAR_OF_CLOUD, b.altitude), stations: 1 };
+  }
+
+  /** Turns the Earth by angles across and up the screen, in radians. */
+  turnBy(across, up) {
+    const b = this.browse;
+    const east = normalize(cross([0, 1, 0], b.sub));
+    const north = cross(b.sub, east);
+    let s = normalize(b.sub.map((x, k) => x - east[k] * across + north[k] * up));
+    // Keep away from the poles, where north-up would spin.
+    const [lat, lon] = latLon(s);
+    if (Math.abs(lat) > 78) s = unitVector(Math.sign(lat) * 78, lon);
+    b.sub = s;
+  }
+
+  /** Radius of the globe on screen, in CSS pixels. */
+  globeRadius() {
+    const d = 1 + (this.altitude ?? 1);
+    const half = Math.tan((this.orbitCamera.fov * Math.PI) / 360);
+    return ((innerHeight / 2) * Math.tan(Math.asin(1 / d))) / half;
+  }
+
+  /** Where a station is on screen, if it faces you. */
+  screenOf(i) {
+    if (!this.ok || this.mode !== 'orbit') return null;
+    const v = new THREE.Vector3(...this.vectors[i]).multiplyScalar(1.0025).applyMatrix4(this.globe.matrixWorld);
+    const toCamera = this.orbitCamera.position.clone().sub(v);
+    if (v.dot(toCamera) <= 0) return null;
+    v.project(this.orbitCamera);
+    return [((v.x + 1) / 2) * innerWidth, ((1 - v.y) / 2) * innerHeight];
+  }
+
+  /** The station nearest a point on screen, within reach in pixels. */
+  pickAt(x, y, reach) {
+    let best = null;
+    let bestDistance = reach;
+    for (let i = 0; i < this.vectors.length; i++) {
+      const s = this.screenOf(i);
+      if (!s) continue;
+      const d = Math.hypot(s[0] - x, s[1] - y);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  hover(i) {
+    if (this.hovered === i) return;
+    this.hovered = i;
+    this.paintLights();
+    this.onHover?.(i);
+  }
+
+  input() {
+    const canvas = this.canvas;
+    const pointers = new Map();
+    let last = null;
+    let tap = null;
+    let span = 0;
+    let pull = 0;
+    const coarse = () => matchMedia('(pointer: coarse)').matches;
+    const turning = () => this.browse && this.mode === 'orbit';
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      canvas.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      tap = pointers.size === 1 ? { x: e.clientX, y: e.clientY } : null;
+      last = { x: e.clientX, y: e.clientY, at: performance.now() };
+      if (pointers.size === 2) span = pairDistance(pointers);
+      if (this.browse) {
+        this.browse.vx = this.browse.vy = 0;
+      }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) {
+        if (e.pointerType === 'mouse' && turning()) {
+          const i = this.pickAt(e.clientX, e.clientY, 14);
+          this.hover(i);
+          canvas.style.cursor = i === null ? 'grab' : 'pointer';
+        }
+        return;
+      }
+      pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pointers.size === 2) {
+        const d = pairDistance(pointers);
+        if (span) this.zoomBy(span / d);
+        span = d;
+        return;
+      }
+      if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6) return;
+      tap = null;
+      if (!turning()) return;
+      this.dragging = true;
+      this.hover(null);
+      canvas.style.cursor = 'grabbing';
+      const k = 1 / this.globeRadius();
+      const now = performance.now();
+      const dt = Math.max(8, now - last.at) / 1000;
+      const across = (e.clientX - last.x) * k;
+      const up = (e.clientY - last.y) * k;
+      this.turnBy(across, up);
+      this.browse.vx = 0.5 * this.browse.vx + (0.5 * across) / dt;
+      this.browse.vy = 0.5 * this.browse.vy + (0.5 * up) / dt;
+      last = { x: e.clientX, y: e.clientY, at: now };
+    });
+    const release = (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.delete(e.pointerId);
+      span = pointers.size === 2 ? pairDistance(pointers) : 0;
+      this.dragging = false;
+      canvas.style.cursor = turning() ? 'grab' : '';
+      if (pointers.size) return;
+      if (this.browse && performance.now() - (last?.at ?? 0) > 90) this.browse.vx = this.browse.vy = 0;
+      if (tap && e.type === 'pointerup' && turning()) {
+        const i = this.pickAt(e.clientX, e.clientY, coarse() ? 26 : 14);
+        if (i !== null) this.onPick?.(i, e.pointerType !== 'mouse');
+        else if (e.pointerType !== 'mouse') this.hover(null);
+      }
+      tap = null;
+    };
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+    canvas.addEventListener('pointerleave', (e) => e.pointerType === 'mouse' && !pointers.size && this.hover(null));
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        if (this.browse) return this.zoomBy(Math.exp(clamp(e.deltaY, -80, 80) * 0.004));
+        // On the ground, pulling back far enough lifts you off to the Earth.
+        if (this.journey || this.wander) return;
+        pull = Math.max(0, pull + e.deltaY);
+        clearTimeout(this.pullReset);
+        this.pullReset = setTimeout(() => (pull = 0), 400);
+        if (pull > 260) {
+          pull = 0;
+          this.onWantEarth?.();
+        }
+      },
+      { passive: false },
+    );
+  }
+
+  zoomBy(factor) {
+    if (this.browse) {
+      this.browse.target = clamp(this.browse.target * factor, 0.55, 3.2);
+    } else if (factor > 1.15 && !this.journey && !this.wander) {
+      this.onWantEarth?.();
+    }
   }
 
   get ok() {
@@ -743,6 +1039,8 @@ class Outlook {
       rings: { value: new Array(6).fill(0) },
     };
     this.shared = shared;
+
+    // On the ground.
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(42, 1, 4, 3e6);
     this.dome = new THREE.Mesh(
@@ -758,60 +1056,83 @@ class Outlook {
       sea: new THREE.ShaderMaterial({ uniforms: shared, vertexShader: SEA_VERTEX, fragmentShader: SEA_FRAGMENT }),
     };
 
-    // From orbit.
+    // In orbit: the camera stays still and the Earth turns in front of it.
     this.orbitScene = new THREE.Scene();
-    this.orbitCamera = new THREE.PerspectiveCamera(42, 1, 1e-5, 100);
+    this.orbitCamera = new THREE.PerspectiveCamera(42, 1, 1e-4, 200);
     const loader = new THREE.TextureLoader();
     const day = loader.load('earth-day.jpg');
     day.colorSpace = THREE.SRGBColorSpace;
     day.anisotropy = 8;
     const lightsMap = loader.load('earth-lights.png');
     lightsMap.anisotropy = 8;
-    this.orbitUniforms = { day: { value: day }, lightsMap: { value: lightsMap }, sun: { value: new THREE.Vector3() }, level: shared.level };
-    this.earth = new THREE.Mesh(new THREE.SphereGeometry(1, 192, 96), new THREE.ShaderMaterial({ uniforms: this.orbitUniforms, vertexShader: EARTH_VERTEX, fragmentShader: EARTH_FRAGMENT }));
+    this.orbitUniforms = { day: { value: day }, lightsMap: { value: lightsMap }, sun: { value: new THREE.Vector3() }, eye: { value: new THREE.Vector3() }, level: shared.level };
+    this.globe = new THREE.Group();
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 256, 128), new THREE.ShaderMaterial({ uniforms: this.orbitUniforms, vertexShader: EARTH_VERTEX, fragmentShader: EARTH_FRAGMENT }));
     const air = new THREE.Mesh(
-      new THREE.SphereGeometry(1.022, 128, 64),
+      new THREE.SphereGeometry(1.018, 160, 80),
       new THREE.ShaderMaterial({ uniforms: this.orbitUniforms, vertexShader: EARTH_VERTEX, fragmentShader: AIR_FRAGMENT, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide }),
     );
+    this.route = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: new THREE.Color(1.6, 0.95, 0.45), transparent: true, opacity: 0.9 }));
+    this.markUniforms = { dpr: { value: 1 }, time: shared.time, opacity: { value: 1 }, zoom: { value: 1 }, stations: { value: 0 } };
+    const markMaterial = new THREE.ShaderMaterial({ uniforms: this.markUniforms, vertexShader: MARK_VERTEX, fragmentShader: MARK_FRAGMENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.marks = new THREE.Points(new THREE.BufferGeometry(), markMaterial);
+    this.marks.frustumCulled = false;
+    const lights = new THREE.BufferGeometry();
+    lights.setAttribute('position', new THREE.Float32BufferAttribute(this.vectors.flatMap((v) => v.map((x) => x * 1.0025)), 3));
+    lights.setAttribute('size', new THREE.Float32BufferAttribute(this.vectors.map(() => 5), 1));
+    this.lightKinds = new Float32Array(this.vectors.length).fill(3);
+    lights.setAttribute('kind', new THREE.BufferAttribute(this.lightKinds, 1));
+    this.stationLights = new THREE.Points(lights, markMaterial);
+    this.stationLights.frustumCulled = false;
+    this.globe.add(earth, air, this.stationLights, this.route, this.marks);
+    // The needle while the dial turns stays at the centre of the face of the globe.
+    const needle = new THREE.BufferGeometry();
+    needle.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 1.004], 3));
+    needle.setAttribute('size', new THREE.Float32BufferAttribute([30], 1));
+    needle.setAttribute('kind', new THREE.Float32BufferAttribute([2], 1));
+    this.needle = new THREE.Points(needle, markMaterial);
+    this.needle.frustumCulled = false;
     const stars = new THREE.BufferGeometry();
     const sp = [];
-    for (let i = 0; i < 2600; i++) {
+    for (let i = 0; i < 3200; i++) {
       const v = normalize([Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1]);
-      sp.push(v[0] * 40, v[1] * 40, v[2] * 40);
+      sp.push(v[0] * 90, v[1] * 90, v[2] * 90);
     }
     stars.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
-    this.orbitStars = new THREE.Points(stars, new THREE.PointsMaterial({ color: 0x9aa3b8, size: 1.1, sizeAttenuation: false, transparent: true, opacity: 0.8 }));
-    this.route = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0.85 }));
-    this.orbitScene.add(this.earth, air, this.orbitStars, this.route);
+    const starColours = [];
+    for (let i = 0; i < 3200; i++) {
+      const b = 0.25 + Math.pow(Math.random(), 6) * 1.6;
+      starColours.push(b * 0.92, b * 0.95, b);
+    }
+    stars.setAttribute('color', new THREE.Float32BufferAttribute(starColours, 3));
+    this.orbitScene.add(this.globe, this.needle, new THREE.Points(stars, new THREE.PointsMaterial({ size: 1.2, sizeAttenuation: false, vertexColors: true })));
 
-    // The overlay, drawn last over either scene.
-    this.overlayUniforms = {
+    // Development: HDR target, halation at a quarter size, the print.
+    const target = (scale, depth) =>
+      new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: depth, samples: depth ? 4 : 0, colorSpace: THREE.NoColorSpace });
+    this.hdr = target(1, true);
+    this.glowA = target(0.25, false);
+    this.glowB = target(0.25, false);
+    this.post = new THREE.Scene();
+    this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.screen = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)));
+    this.screen.frustumCulled = false;
+    this.post.add(this.screen);
+    const pass = (fragmentShader, uniforms) => new THREE.ShaderMaterial({ uniforms, vertexShader: SCREEN_VERTEX, fragmentShader, depthTest: false, depthWrite: false, toneMapped: false });
+    this.bright = pass(BRIGHT_FRAGMENT, { source: { value: null }, exposure: { value: 1 } });
+    this.blur = pass(BLUR_FRAGMENT, { source: { value: null }, step: { value: new THREE.Vector2() } });
+    this.gradeUniforms = {
+      source: { value: this.hdr.texture },
+      glow: { value: this.glowA.texture },
       res: { value: new THREE.Vector2(1, 1) },
+      exposure: { value: 1 },
       time: shared.time,
       veil: { value: 1 },
       veilColour: { value: new THREE.Color(0, 0, 0) },
       rain: { value: 0 },
       snow: { value: 0 },
     };
-    this.overlay = new THREE.Scene();
-    const quad = new THREE.Mesh(
-      new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
-      new THREE.ShaderMaterial({
-        uniforms: this.overlayUniforms,
-        vertexShader: OVERLAY_VERTEX,
-        fragmentShader: OVERLAY_FRAGMENT,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-        blending: THREE.CustomBlending,
-        blendSrc: THREE.OneFactor,
-        blendDst: THREE.OneMinusSrcAlphaFactor,
-      }),
-    );
-    quad.frustumCulled = false;
-    this.overlay.add(quad);
-    this.overlayCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.grade = pass(GRADE_FRAGMENT, this.gradeUniforms);
   }
 
   resize() {
@@ -820,8 +1141,16 @@ class Outlook {
     const h = innerHeight;
     this.portrait = w < 720 || w / h < 0.8;
     this.dprCap ??= 1.75;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.dprCap));
+    const dpr = Math.min(devicePixelRatio || 1, this.dprCap);
+    this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
+    const pw = Math.round(w * dpr);
+    const ph = Math.round(h * dpr);
+    this.hdr.setSize(pw, ph);
+    this.glowA.setSize(Math.ceil(pw / 4), Math.ceil(ph / 4));
+    this.glowB.setSize(Math.ceil(pw / 4), Math.ceil(ph / 4));
+    this.gradeUniforms.res.value.set(w, h);
+    this.markUniforms.dpr.value = dpr;
     // A lens of about 70 degrees across, whatever the shape of the window.
     const vertical = (2 * Math.atan(Math.tan((70 * Math.PI) / 360) / (w / h)) * 180) / Math.PI;
     for (const c of [this.camera, this.orbitCamera]) {
@@ -829,7 +1158,8 @@ class Outlook {
       c.fov = clamp(vertical, 32, 78);
       c.updateProjectionMatrix();
     }
-    this.overlayUniforms.res.value.set(w, h);
+    // The globe sits up and to the right, clear of the caption; on a phone, in the upper half.
+    this.orbitCamera.setViewOffset(w, h, this.portrait ? 0 : -w * 0.1, this.portrait ? h * 0.12 : h * 0.03, w, h);
     this.horizon = document.body.classList.contains('poster') ? 0.36 : this.portrait ? 0.47 : h < 560 ? 0.42 : 0.44;
     document.documentElement.style.setProperty('--horizon', `${(1 - this.horizon) * 100}%`);
   }
@@ -857,12 +1187,21 @@ class Outlook {
     return p;
   }
 
-  /** Stands at a station without travelling, once its land has loaded. */
+  /** The first view: the Earth from far off turns to the station, and the view comes down to it. */
   stand(i) {
-    this.place = this.vectors[i];
     this.current = i;
+    this.paintLights();
     const p = this.placeFor(i);
-    this.journey = { kind: 'arrive', start: performance.now(), to: i };
+    const to = this.vectors[i];
+    if (this.reduced) {
+      this.place = to;
+      this.journey = { kind: 'arrive', start: performance.now(), to: i };
+    } else {
+      // Begin with the station a quarter of the way round, coming in from the east.
+      const from = normalize(rotateAbout([0, 1, 0], to, -1.1));
+      this.place = from;
+      this.journey = this.orbitJourney(i, from, to, { rise: 0, startAltitude: 2.6, span: 4200 });
+    }
     this.awaitLand(this.journey, p);
   }
 
@@ -873,7 +1212,14 @@ class Outlook {
     place.ready.then(() => (j.loaded = true), () => (j.loaded = true));
   }
 
-  /** Travels to a station: up through the cloud, across the Earth if it is far, and down. */
+  orbitJourney(i, from, to, { rise, startAltitude, span }) {
+    const angle = angleBetween(from, to);
+    // Far enough out to see the Earth as a ball; farther for the far side of it.
+    const peak = 1.05 + 1.55 * Math.sqrt(angle / Math.PI);
+    return { kind: 'orbit', start: performance.now(), to: i, from, angle, rise, span, fall: 1700, startAltitude, peak };
+  }
+
+  /** Travels to a station: up through the cloud, out until the Earth is a ball turning below, and down. */
   fly(i) {
     const now = performance.now();
     const from = this.place;
@@ -882,44 +1228,44 @@ class Outlook {
     const dest = this.placeFor(i);
     this.current = i;
     this.wander = null;
+    this.browse = null;
+    this.hover(null);
+    this.paintLights();
     this.weatherTarget = { ...CLEAR };
     const inOrbit = this.mode === 'orbit';
-    let estimate;
     if (this.reduced) {
-      this.journey = { kind: 'cut', start: now, to: i, fromPlace: from };
-      estimate = now + 900;
-    } else if (inOrbit || angle > 0.16) {
-      const span = 1600 + 2400 * Math.pow(angle / Math.PI, 0.75);
-      this.journey = { kind: 'orbit', start: now, to: i, from, angle, rise: inOrbit ? 0 : 1300, span, fall: 1800, startAltitude: inOrbit ? this.orbitAltitude : 0.006 };
-      estimate = now + this.journey.rise + span + 1800;
+      this.journey = { kind: 'cut', start: now, to: i };
     } else {
-      this.journey = { kind: 'hop', start: now, to: i, from, rise: 1100, fall: 1500 };
-      estimate = now + 2600;
+      const span = 3000 + 2400 * Math.sqrt(angle / Math.PI);
+      this.journey = this.orbitJourney(i, from, to, { rise: inOrbit ? 0 : 900, startAltitude: inOrbit ? this.altitude ?? NEAR : NEAR, span });
     }
-    this.awaitLand(this.journey, dest);
-    return { estimate, landed: this.journey.landed };
+    const j = this.journey;
+    this.awaitLand(j, dest);
+    const estimate = now + (j.kind === 'cut' ? 900 : j.rise + j.span + j.fall);
+    return { estimate, landed: j.landed };
   }
 
   /** Share of the current journey travelled, eased, for the distance counter. */
   get progress() {
     const j = this.journey;
-    if (!j || j.kind === 'arrive') return 1;
-    const t = (performance.now() - j.start) / ((j.rise || 0) + (j.span || 0) + (j.fall || 0) || 1);
-    return smoothstep(0, 1, clamp(t, 0, 1));
+    if (!j || j.kind !== 'orbit') return 1;
+    return smoothstep(0, 1, clamp((performance.now() - j.start - j.rise) / j.span, 0, 1));
   }
 
   get flight() {
     return this.journey && this.journey.kind !== 'arrive' ? this.journey : null;
   }
 
-  /** Holding Drift: up into orbit, and the Earth turns below along a heading chosen by chance. */
+  /** Holding Drift: out to where the Earth is a ball, turning along a heading chosen by chance. */
   startWander() {
     const p = this.place;
     const frame = frameAt(...latLon(p));
     const a = Math.random() * Math.PI * 2;
     const heading = frame.east.map((x, k) => x * Math.cos(a) + frame.north[k] * Math.sin(a));
-    this.wander = { axis: normalize(cross(p, heading)), start: performance.now(), speed: 0, sub: p, rise: this.mode === 'orbit' ? 0 : 1300 };
+    this.wander = { axis: normalize(cross(p, heading)), start: performance.now(), sub: p, rise: this.mode === 'orbit' ? 0 : 900, from: this.altitude ?? NEAR };
     this.journey = null;
+    this.browse = null;
+    this.hover(null);
     this.passing = null;
     this.weatherTarget = { ...CLEAR };
   }
@@ -949,7 +1295,7 @@ class Outlook {
     if (this.rings.length > 6) this.rings.shift();
   }
 
-  /* Each frame: where the camera is, then the light there, then paint. ----------------------- */
+  /* Each frame: where the view is, then the light there, then paint and develop. ------------- */
 
   frame(now, dt, sound) {
     const light = lightAt(this.place);
@@ -959,125 +1305,145 @@ class Outlook {
     for (const key of ['cloud', 'rain', 'snow', 'fog']) this.weather[key] += (this.weatherTarget[key] - this.weather[key]) * ease;
     for (const ring of this.rings) ring.r += dt * (900 + ring.r * 0.6);
     this.rings = this.rings.filter((ring) => ring.r < 14000);
+    this.shared.time.value = now / 1000;
 
-    const view = this.wander ? this.wanderView(now, dt) : this.journeyView(now);
+    const view = this.wander ? this.wanderView(now, dt) : this.browse ? this.browseView(now, dt) : this.journeyView(now);
     this.mode = view.mode;
     const seen = lightAt(view.mode === 'ground' ? this.vectors[view.station] : this.place);
-    const target = view.mode === 'orbit' ? 1.1 : 0.4 + 1.5 * smoothstep(4, -12, seen.elevation);
+    // Exposure follows the light as an eye does.
+    const target = view.mode === 'orbit' ? 1.15 : 0.42 + 1.5 * smoothstep(4, -12, seen.elevation);
     this.exposure = (this.exposure ?? target) + (target - (this.exposure ?? target)) * Math.min(1, dt * 1.5);
-    this.renderer.toneMappingExposure = this.exposure;
-    if (view.mode === 'orbit') this.renderOrbit(view, light);
-    else this.renderGround(view, light, now);
-    this.renderer.setRenderTarget(null);
-    this.overlayUniforms.veil.value = clamp(Math.max(view.veil, 1 - this.reveal), 0, 1);
-    this.overlayUniforms.veilColour.value.copy(this.veilColour(light));
-    this.overlayUniforms.rain.value = view.mode === 'ground' ? this.weather.rain : 0;
-    this.overlayUniforms.snow.value = view.mode === 'ground' ? this.weather.snow : 0;
-    this.renderer.render(this.overlay, this.overlayCamera);
 
-    const top = mix(light.zenith, [0.55, 0.57, 0.6], this.weather.cloud * 0.6 * (1 - light.night));
+    const r = this.renderer;
+    r.setRenderTarget(this.hdr);
+    r.setClearColor(0x000000, 1);
+    r.clear();
+    if (view.mode === 'orbit') this.renderOrbit(view);
+    else this.renderGround(view, now);
+    this.develop(view, seen);
+
+    const top = mix(seen.zenith, [0.55, 0.57, 0.6], this.weather.cloud * 0.6 * (1 - seen.night));
     const lum = 0.2126 * top[0] + 0.7152 * top[1] + 0.0722 * top[2];
     this.tone = view.mode === 'orbit' || view.veil > 0.5 ? 'dark' : lum > 0.36 ? 'light' : lum < 0.3 ? 'dark' : this.tone;
     return light;
   }
 
+  /** Halation from the brightest light, then the print with its grade, grain and veil. */
+  develop(view, seen) {
+    const r = this.renderer;
+    const draw = (material, target) => {
+      this.screen.material = material;
+      r.setRenderTarget(target);
+      r.render(this.post, this.postCamera);
+    };
+    this.bright.uniforms.source.value = this.hdr.texture;
+    this.bright.uniforms.exposure.value = this.exposure;
+    draw(this.bright, this.glowA);
+    const w = this.glowA.width;
+    const h = this.glowA.height;
+    for (const radius of [1, 2.5]) {
+      this.blur.uniforms.source.value = this.glowA.texture;
+      this.blur.uniforms.step.value.set(radius / w, 0);
+      draw(this.blur, this.glowB);
+      this.blur.uniforms.source.value = this.glowB.texture;
+      this.blur.uniforms.step.value.set(0, radius / h);
+      draw(this.blur, this.glowA);
+    }
+    const g = this.gradeUniforms;
+    g.exposure.value = this.exposure;
+    g.veil.value = clamp(Math.max(view.veil, 1 - this.reveal), 0, 1);
+    g.veilColour.value.copy(this.veilColour(seen, view.mode));
+    g.rain.value = view.mode === 'ground' ? this.weather.rain : 0;
+    g.snow.value = view.mode === 'ground' ? this.weather.snow : 0;
+    draw(this.grade, null);
+  }
+
   /** Cloud you pass through: white by day, grey at dusk, near black at night. */
-  veilColour(light) {
-    const v = 0.04 + 0.78 * light.day + 0.12 * (1 - light.night) * (1 - light.day);
+  veilColour(light, mode) {
+    const v = mode === 'orbit' ? 0.03 + 0.55 * light.day : 0.03 + 0.72 * light.day + 0.1 * (1 - light.night) * (1 - light.day);
     return new THREE.Color(v * 0.97, v * 0.98, v);
   }
 
-  /** The camera along the current journey, as a mode and a pose. */
+  /** The view along the current journey, as a mode and a pose. */
   journeyView(now) {
     const j = this.journey;
     const station = this.current ?? 0;
     if (!j) return { mode: 'ground', station, altitude: 0, pitch: 0, veil: 0 };
     const t = now - j.start;
     if (j.kind === 'arrive' || j.kind === 'cut') {
-      if (!j.loaded) {
-        if (j.kind === 'cut' && j.fromPlace) return { mode: 'ground', station: this.shownStation ?? station, altitude: 0, pitch: 0, veil: clamp(t / 400, 0, 1) };
-        return { mode: 'ground', station, altitude: 0, pitch: 0, veil: 1 };
-      }
+      if (!j.loaded) return { mode: 'ground', station: this.shownStation ?? station, altitude: 0, pitch: 0, veil: j.kind === 'cut' ? clamp(t / 400, 0, 1) : 1 };
       j.loadedAt ??= now;
       const a = clamp((now - j.loadedAt) / (j.kind === 'cut' ? 500 : 1400), 0, 1);
       if (a >= 1) this.finish(j);
       this.place = this.vectors[j.to];
       return { mode: 'ground', station: j.to, altitude: 0, pitch: 0, veil: 1 - smoothstep(0, 1, a) };
     }
-    const rise = j.rise;
-    const span = j.span || 0;
-    const top = j.kind === 'hop' ? 9000 : 26000;
-    if (t < rise) {
-      // Up from where you were, looking down as the land falls away.
-      const u = smoothstep(0, 1, t / rise);
-      return { mode: 'ground', station: this.shownStation ?? station, altitude: top * Math.pow(u, 2.2), pitch: -38 * u, veil: smoothstep(0.55, 1, t / rise) };
+    if (t < j.rise) {
+      // Up from where you were, looking down as the land falls away into cloud.
+      const u = t / j.rise;
+      const e = u * u;
+      return { mode: 'ground', station: this.shownStation ?? station, altitude: 24000 * e, pitch: -70 * smoothstep(0, 1, u), veil: smoothstep(0.45, 1, u) };
     }
-    if (j.kind === 'orbit' && t < rise + span) {
-      const u = (t - rise) / span;
-      const e = u * u * u * (u * (u * 6 - 15) + 10);
-      this.place = slerp(j.from, this.vectors[j.to], e);
-      // From where it started, up to a height that grows with the distance, and down to the cloud.
-      const peak = 0.28 + 1.1 * Math.pow(j.angle / Math.PI, 0.9);
-      const base = j.startAltitude + (0.006 - j.startAltitude) * u;
-      const altitude = base + (peak - base) * Math.sin(Math.PI * u) ** 0.8;
-      this.orbitAltitude = altitude;
-      const veil = Math.max(1 - smoothstep(0, 0.12, u), smoothstep(0.88, 1, u));
-      return { mode: 'orbit', sub: this.place, heading: normalize(cross3(this.place, j.from, this.vectors[j.to])), altitude, veil, route: { from: j.from, to: this.vectors[j.to], u: e } };
+    const to = this.vectors[j.to];
+    if (t < j.rise + j.span || !j.loaded) {
+      const u = clamp((t - j.rise) / j.span, 0, 1);
+      // The Earth turns while it is seen whole; the view pulls out first and comes in after.
+      const turn = smoothstep(0.12, 0.88, u);
+      this.place = slerp(j.from, to, turn);
+      const out = smoothstep(0, 0.42, u);
+      const back = smoothstep(0.58, 1, u);
+      const altitude = j.startAltitude + (j.peak - j.startAltitude) * out - (j.peak - NEAR) * back;
+      this.altitude = altitude;
+      const veil = Math.max(1 - smoothstep(NEAR, CLEAR_OF_CLOUD, altitude), j.loaded || u < 1 ? 0 : 1);
+      return { mode: 'orbit', sub: this.place, altitude, veil, route: { from: j.from, to, u: turn } };
     }
-    // Hold in the cloud until the land below has loaded.
-    if (!j.loaded) {
-      j.held = (j.held ?? 0) + 1;
-      this.place = this.vectors[j.to];
-      return { mode: 'ground', station: this.shownStation ?? station, altitude: top, pitch: -38, veil: 1 };
-    }
+    // Down through the cloud to the land.
     j.fallStart ??= now;
     const u = clamp((now - j.fallStart) / j.fall, 0, 1);
-    const e = smoothstep(0, 1, u);
-    this.place = this.vectors[j.to];
+    const e = 1 - Math.pow(1 - u, 2.6);
+    this.place = to;
     if (u >= 1) this.finish(j);
-    return { mode: 'ground', station: j.to, altitude: top * Math.pow(1 - e, 2.4), pitch: -38 * (1 - e), veil: 1 - smoothstep(0, 0.45, u) };
+    return { mode: 'ground', station: j.to, altitude: 24000 * (1 - e), pitch: -70 * (1 - smoothstep(0, 1, u)), veil: 1 - smoothstep(0, 0.35, u) };
   }
 
   finish(j) {
     if (this.journey !== j) return;
     this.journey = null;
+    this.altitude = NEAR;
     j.resolve?.();
   }
 
-  /** Holding Drift: rise, then the Earth turns below at a steady height. */
+  /** Holding Drift: out until the Earth is a ball, then it turns, gathering speed. */
   wanderView(now, dt) {
     const w = this.wander;
     const t = now - w.start;
     if (t < w.rise) {
-      const u = smoothstep(0, 1, t / w.rise);
-      return { mode: 'ground', station: this.shownStation ?? this.current ?? 0, altitude: 26000 * Math.pow(u, 2.2), pitch: -38 * u, veil: smoothstep(0.55, 1, t / w.rise) };
+      const u = t / w.rise;
+      return { mode: 'ground', station: this.shownStation ?? this.current ?? 0, altitude: 24000 * u * u, pitch: -70 * smoothstep(0, 1, u), veil: smoothstep(0.45, 1, u) };
     }
     const s = (t - w.rise) / 1000;
-    w.speed = (8 + 26 * smoothstep(0.2, 2, s)) * DEG;
-    const turn = w.speed * dt;
-    const p = w.sub;
-    const kp = cross(w.axis, p);
-    w.sub = normalize(p.map((x, i) => x * Math.cos(turn) + kp[i] * Math.sin(turn)));
+    const speed = (6 + 30 * smoothstep(0.6, 2.4, s)) * DEG;
+    w.sub = normalize(rotateAbout(w.axis, w.sub, speed * dt));
     this.place = w.sub;
-    const altitude = 0.006 + 0.5 * smoothstep(0, 1.6, s);
-    this.orbitAltitude = altitude;
-    const passing = this.nearest(240);
+    const altitude = w.from + (1.25 - w.from) * smoothstep(0, 1.3, s);
+    this.altitude = altitude;
+    const passing = this.nearest(260);
     if (passing !== this.passing) {
       this.passing = passing;
-      if (passing !== null) this.onPass?.(passing, w.speed / (34 * DEG));
+      if (passing !== null) this.onPass?.(passing, speed / (36 * DEG));
     }
-    return { mode: 'orbit', sub: w.sub, heading: normalize(cross(w.axis, w.sub)), altitude, veil: 1 - smoothstep(0, 0.35, s) };
+    return { mode: 'orbit', sub: w.sub, altitude, veil: 1 - smoothstep(NEAR, CLEAR_OF_CLOUD, altitude), needle: smoothstep(0.6, 1.4, s) };
   }
 
-  setSky(light, frame) {
+  setSky(light, place) {
     const u = this.shared;
     // The analytic sky goes black the moment the sun is two degrees down. Real twilight fades
     // over the next ten: hold the sun's direction just under the horizon and let its light decay.
     const held = Math.max(light.elevation, -1.8);
     const twilight = light.elevation < -1.8 ? Math.exp((light.elevation + 1.8) / 4.5) : 1;
-    const sun = lightDirection(held, light.azimuth);
+    const sun = bearing(light.azimuth, held);
     u.sunDir.value.copy(sun);
-    u.moonDir.value.copy(lightDirection(light.moonElevation, light.moonAzimuth));
+    u.moonDir.value.copy(bearing(light.moonAzimuth, light.moonElevation));
     u.elongation.value = light.elongation;
     u.night.value = smoothstep(-3, -13, light.elevation);
     u.blueHour.value = smoothstep(1, -3, light.elevation) * smoothstep(-15, -6, light.elevation);
@@ -1086,18 +1452,17 @@ class Outlook {
     const turbidity = 2.2 + 2.6 * this.weather.cloud + 8 * this.weather.fog;
     const zenith = Math.acos(clamp(sun.y, -1, 1));
     u.sunE.value = 1000 * Math.max(0, 1 - Math.exp(-(1.6110731556870734 - zenith) / 1.5)) * twilight;
-    const rayleigh = 1.6;
-    u.betaR.value.set(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5).multiplyScalar(rayleigh);
+    u.betaR.value.set(5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5).multiplyScalar(1.6);
     const c = 0.2 * turbidity * 10e-18 * 0.434 * 0.005;
     u.betaM.value.set(1.8399918514433978e14 * c, 2.7798023919660528e14 * c, 4.0790479543861094e14 * c);
     u.cloud.value = this.weather.cloud;
     u.haze.value = 1 / ((220000 / (1 + turbidity * 0.3)) * (1 - 0.94 * this.weather.fog));
-    u.townGlow.value = frame?.townLight ?? 0;
+    u.townGlow.value = place?.townLight ?? 0;
     u.level.value = this.level;
     u.rings.value = Array.from({ length: 6 }, (_, k) => this.rings[k]?.r ?? 0);
   }
 
-  renderGround(view, light, now) {
+  renderGround(view, now) {
     const i = view.station;
     const place = this.places.get(i);
     if (place && this.shown !== place) {
@@ -1107,73 +1472,87 @@ class Outlook {
       this.shownStation = i;
     }
     const s = this.stations[i];
-    const here = unitVector(s.lat, s.lon);
-    const local = lightAt(here);
+    const local = lightAt(unitVector(s.lat, s.lon));
     this.setSky(local, place);
-    this.shared.time.value = now / 1000;
     this.shared.seed.value = (s.lat * 0.37 + s.lon * 0.11) % 13;
     // Face the sun by day and at dusk; at night, the moon if it is up; a little to the right of it.
     const moonUp = smoothstep(-3, 2, local.moonElevation);
     const toMoon = smoothstep(-6, -11, local.elevation) * moonUp;
     const facing = turnToward(local.azimuth - 13, local.moonAzimuth - 13, toMoon);
-    this.facing = facing;
-    const eye = (place?.ground ?? 0) + EYE + view.altitude;
     const c = this.camera;
-    c.position.set(0, eye, 0);
+    c.position.set(0, (place?.ground ?? 0) + EYE + view.altitude, 0);
     // The horizon sits a little below the middle of the window.
     const lift = (0.5 - this.horizon) * c.fov;
     this.shared.pixelAngle.value = (c.fov * Math.PI) / 180 / (innerHeight * this.renderer.getPixelRatio());
-    const look = bearing(facing, lift + view.pitch);
     c.up.set(0, 1, 0);
-    c.lookAt(c.position.clone().add(look));
+    c.lookAt(c.position.clone().add(bearing(facing, lift + view.pitch)));
     this.dome.position.copy(c.position);
-    this.renderer.setClearColor(0x000000, 1);
-    this.renderer.clear();
     this.renderer.render(this.scene, c);
   }
 
-  renderOrbit(view, light) {
+  renderOrbit(view) {
+    // Turn the Earth so the point below faces the camera, north up.
     const p = view.sub;
-    const sun = sunDirection(new Date());
-    this.orbitUniforms.sun.value.set(...sun);
+    const east = normalize(cross([0, 1, 0], p));
+    const north = cross(p, east);
+    const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(...east), new THREE.Vector3(...north), new THREE.Vector3(...p));
+    this.globe.quaternion.setFromRotationMatrix(basis.transpose());
     const c = this.orbitCamera;
-    const h = view.altitude;
-    // Above the point below, looking ahead along the way so the curve of the Earth is in view.
-    const ahead = view.heading;
-    const pos = p.map((x, k) => x * (1 + h) - ahead[k] * h * 0.55);
-    c.position.set(...pos);
-    const target = p.map((x, k) => x + ahead[k] * Math.min(0.5, h * 0.9));
-    c.up.set(...p);
-    c.lookAt(...target);
+    c.position.set(0, 0, 1 + view.altitude);
+    c.up.set(0, 1, 0);
+    c.lookAt(0, 0, 0);
+    this.globe.updateMatrixWorld();
+    this.orbitUniforms.sun.value.set(...sunDirection(new Date()));
+    this.orbitUniforms.eye.value.copy(this.globe.worldToLocal(c.position.clone()));
+
+    const marks = [];
+    const sizes = [];
+    const kinds = [];
     if (view.route) {
+      const { from, to, u } = view.route;
       const points = [];
-      const n = 96;
-      const u = view.route.u;
+      const n = 128;
+      // The route rises a little off the ground in the middle, like a flight path.
+      const lift = 0.004 + 0.012 * Math.min(1, angleBetween(from, to) / 1.6);
       for (let k = 0; k <= n; k++) {
-        const q = slerp(view.route.from, view.route.to, (k / n) * Math.max(u, 0.001));
-        points.push(new THREE.Vector3(q[0] * 1.002, q[1] * 1.002, q[2] * 1.002));
+        const f = (k / n) * Math.max(u, 0.0005);
+        const q = slerp(from, to, f);
+        const h = 1.002 + lift * Math.sin(Math.PI * f);
+        points.push(new THREE.Vector3(q[0] * h, q[1] * h, q[2] * h));
       }
       this.route.geometry.setFromPoints(points);
       this.route.visible = true;
+      marks.push(...from.map((x) => x * 1.003), ...to.map((x) => x * 1.003));
+      sizes.push(9, 18);
+      kinds.push(0, 1);
     } else {
       this.route.visible = false;
     }
-    this.orbitStars.position.copy(c.position);
-    this.renderer.setClearColor(0x000000, 1);
-    this.renderer.clear();
+    const geometry = this.marks.geometry;
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(marks, 3));
+    geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+    geometry.setAttribute('kind', new THREE.Float32BufferAttribute(kinds, 1));
+    this.needle.visible = Boolean(view.needle);
+    this.markUniforms.opacity.value = 1;
+    this.markUniforms.stations.value = view.stations ?? 0.45;
+    this.markUniforms.zoom.value = clamp(1.25 / Math.sqrt(view.altitude + 0.1), 0.8, 2.4);
     this.renderer.render(this.orbitScene, c);
   }
 }
 
-/** A direction across the travel: the heading at the point below, toward the destination. */
-function cross3(p, from, to) {
-  const axis = cross(from, to);
-  const heading = cross(axis, p);
-  return Math.hypot(...heading) > 1e-6 ? heading : [0, 1, 0];
+/** A vector turned by an angle about an axis through the centre of the Earth. */
+function rotateAbout(axis, v, angle) {
+  const k = normalize(axis);
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const kv = cross(k, v);
+  const d = dot(k, v) * (1 - c);
+  return v.map((x, i) => x * c + kv[i] * s + k[i] * d);
 }
 
-function lightDirection(elevation, azimuth) {
-  return bearing(azimuth, elevation);
+function pairDistance(pointers) {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
 }
 
 function turnToward(a, b, t) {
