@@ -24,7 +24,6 @@ class RadioGlobe {
       if (!this.cityMembers.has(key)) this.cityMembers.set(key, []);
       this.cityMembers.get(key).push(i);
     }
-    this.pulse = null;
     this.positions = stations.map((s) => {
       const lat = s.lat * this.rad,
         lon = s.lon * this.rad;
@@ -38,6 +37,8 @@ class RadioGlobe {
     this.ctx = this.overlay.getContext("2d");
     this.energy = new Float32Array(3);
     this.time = 0;
+    this.flowPush = 0;
+    this.flowTravel = 0;
     this.tint = 0;
     this.sphere = new SignalSphere(this.canvas, () => this.draw());
     this.flightScale = 1;
@@ -172,7 +173,7 @@ class RadioGlobe {
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.w, this.h);
     this.drawJourney(now);
-    // Browsers using the raster surface receive the same local soft light.
+    // Without WebGL, one curved wash follows the same audio spring.
     if (
       !this.sphere.gl &&
       this.listening &&
@@ -182,19 +183,41 @@ class RadioGlobe {
       const s = this.stations[this.selected],
         [x, y, z] = this.project(s.lat, s.lon);
       if (z <= 0) return;
-      const r = this.radius * (0.13 + 0.16 * this.hold);
-      const halo = c.createRadialGradient(x, y, 0, x, y, r);
-      halo.addColorStop(
-        0,
-        "rgba(249,185,145," + Math.min(0.57, this.loudness * 0.8) + ")",
-      );
-      halo.addColorStop(1, "rgba(249,185,145,0)");
+      const push = this.flowPush,
+        travel = this.flowTravel;
+      const extent = this.radius * (0.21 + 0.13 * this.hold);
+      const offset = this.radius * (0.26 * push + 0.065 * Math.sin(travel));
       c.save();
       c.beginPath();
       c.arc(this.cx, this.cy, this.radius, 0, Math.PI * 2);
       c.clip();
+      c.translate(x + offset * 0.85, y - offset * 0.5);
+      c.rotate(-0.51 + 0.14 * Math.sin(travel));
+      c.scale(1.5, 0.82);
+      const halo = c.createRadialGradient(0, 0, 0, 0, 0, extent);
+      halo.addColorStop(0, "rgba(110,184,178,.08)");
+      halo.addColorStop(0.58, "rgba(197,218,196," + (0.12 + 0.26 * push) + ")");
+      halo.addColorStop(1, "rgba(197,218,196,0)");
       c.fillStyle = halo;
-      c.fillRect(x - r, y - r, r * 2, r * 2);
+      c.beginPath();
+      c.moveTo(-extent, 0);
+      c.bezierCurveTo(
+        -0.4 * extent,
+        -extent,
+        extent,
+        -0.75 * extent,
+        0.92 * extent,
+        0,
+      );
+      c.bezierCurveTo(
+        0.58 * extent,
+        0.6 * extent,
+        -0.65 * extent,
+        0.9 * extent,
+        -extent,
+        0,
+      );
+      c.fill();
       c.restore();
     }
   }
@@ -277,6 +300,12 @@ class RadioGlobe {
         last = now;
         const responsive = this.listening && this.signal?.analyser;
         const measured = responsive ? this.signal.sample(delta) : null;
+        this.flowPush = responsive
+          ? this.signal.displacement
+          : this.flowPush * Math.exp(-delta * 5);
+        this.flowTravel +=
+          delta *
+          (2.85 * this.flowPush + (responsive ? this.signal.level * 0.4 : 0));
         this.strike = responsive ? this.signal.attack : 0;
         this.hold = responsive ? this.signal.sustain : 0;
         this.loudness = responsive ? this.signal.level : 0;
@@ -289,16 +318,6 @@ class RadioGlobe {
           this.firstLight = now;
           this.awaitingSound = false;
         }
-        if (
-          responsive &&
-          !this.awaitingSound &&
-          this.strike > 0.22 &&
-          this.strike > (this.previousStrike || 0) + 0.08 &&
-          now - (this.pulse?.at || 0) > 600
-        ) {
-          this.pulse = { at: now, strength: this.strike };
-        }
-        this.previousStrike = this.strike;
         if (measured) this.energy.set(measured);
         else this.energy.fill(0);
         this.time +=
@@ -334,7 +353,6 @@ class RadioGlobe {
   }
   setReduced(reduced) {
     this.reduced = reduced;
-    this.pulse = null;
     this.cancelFlight();
     this.journey = null;
     if (reduced) this.rotate(this.lon, this.lat);
@@ -342,8 +360,6 @@ class RadioGlobe {
   }
   broadcast(active) {
     if (active !== this.listening) {
-      this.pulse = null;
-      this.previousStrike = 0;
       this.awaitingSound = active;
       this.firstLight = 0;
     }
@@ -356,7 +372,6 @@ class RadioGlobe {
       ? null
       : this.stationRoute(this.stations[this.selected], this.stations[i]);
     this.hover(null);
-    this.pulse = null;
     this.selected = i;
     this.refreshWaves();
     const target = this.stations[i],

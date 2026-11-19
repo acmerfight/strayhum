@@ -26,6 +26,10 @@ class LiveSignal {
     this.sustain = 0;
     this.fluxFloor = 0;
     this.sampled = false;
+    this.lowFloor = 0;
+    this.refractory = 0;
+    this.displacement = 0;
+    this.velocity = 0;
     this.previous.fill(0);
   }
   detach() {
@@ -59,14 +63,38 @@ class LiveSignal {
       this.sampled && level > 0.018
         ? Math.min(1, Math.max(0, (flux - this.fluxFloor * 1.5 - 0.007) * 14))
         : 0;
-    this.attack = Math.max(onset, this.attack * Math.exp(-dt / 0.15));
+    // A kick often changes only three or four FFT bins. Compare their attack
+    // with the recent bass floor before combining it with broadband flux.
+    const hz = this.context.sampleRate / this.analyser.fftSize;
+    const lowEnd = Math.min(this.bins.length, Math.max(2, Math.ceil(185 / hz)));
+    let lowFlux = 0;
+    for (let i = 1; i < lowEnd; i++)
+      lowFlux += Math.max(0, this.bins[i] - this.previous[i]);
+    lowFlux /= 255 * (lowEnd - 1);
+    const bassOnset =
+      this.sampled && rms > 0.004
+        ? Math.max(0, (lowFlux - this.lowFloor * 1.55 - 0.012) * 5.6)
+        : 0;
+    const accent = Math.min(1, Math.max(onset, bassOnset));
+    this.lowFloor += (lowFlux - this.lowFloor) * (1 - Math.exp(-dt / 0.65));
+    this.refractory = Math.max(0, this.refractory - dt);
+    if (accent > 0.105 && this.refractory === 0) {
+      this.velocity = Math.min(15, this.velocity + 4.2 + accent * 10.2);
+      this.refractory = 0.165;
+    }
+    // Exact critically damped spring: a fast push followed by a smooth release.
+    const damping = 6.7,
+      slope = this.velocity + damping * this.displacement;
+    const decay = Math.exp(-damping * dt);
+    this.displacement = (this.displacement + slope * dt) * decay;
+    this.velocity = (this.velocity - damping * slope * dt) * decay;
+    this.attack = Math.max(accent, this.attack * Math.exp(-dt / 0.15));
     this.fluxFloor += (flux - this.fluxFloor) * (1 - Math.exp(-dt / 0.55));
     this.sustain +=
       (this.level - this.sustain) *
       (1 - Math.exp(-dt / (this.level > this.sustain ? 0.6 : 0.36)));
     this.previous.set(this.bins);
     this.sampled = true;
-    const hz = this.context.sampleRate / this.analyser.fftSize;
     const ranges = [
       [45, 240],
       [240, 2500],

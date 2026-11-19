@@ -6,7 +6,7 @@ The globe carries one city caption. A tap finds music at the closest visible loc
 
 ART+COM's *Manta Rhei* coordinates light with the movement of a physical object. Aether carries its pigment field in geographical coordinates, so it turns with the globe and the coastline stays legible. [ART+COM — Manta Rhei](https://artcom.de/?project=manta-rhei)
 
-Semiconductor's *Brilliant Noise* maps changes in image brightness to sound. Aether takes the reverse path. A measured attack sends a soft bloom away from the station. Sustained energy shifts the surrounding colour, and a quiet passage lets it settle. [Semiconductor — Brilliant Noise](https://semiconductorfilms.com/art/brilliant-noise/)
+Semiconductor's *Brilliant Noise* maps changes in image brightness to sound. Aether takes the reverse path. A measured rise in bass or broadband energy pushes the edge of a translucent sheet across the station. A damped spring shapes its release. Sustained energy shifts the surrounding colour, and a quiet passage lets it settle. [Semiconductor — Brilliant Noise](https://semiconductorfilms.com/art/brilliant-noise/)
 
 The listener can explore freely while a station plays. One city name appears under the pointer. The local time, frequency and playback controls belong to the player, leaving the globe free of persistent station markers. [Ryoji Ikeda — datamatics](https://www.ryojiikeda.com/project/datamatics/)
 
@@ -19,7 +19,7 @@ The listener can explore freely while a station plays. One city name appears und
 | Departure | The city name resolves into focus. A fine trace advances along a great-circle route. | The station has changed and the new destination is identifiable. |
 | Passage | The view eases outward, turns and settles over approximately one to two seconds. Longer east–west turns have more clearance. | Distance has a visible duration. |
 | Arrival | Once the camera settles, the first measured sound sends a light front out from the station. | Attention returns to the point that was selected. |
-| Listening | The station name takes the headline. Fast attacks release a local bloom, sustained sound changes its colour, and silence lets the surface settle. FIP and KEXP can supply an artist and title during playback. | The broadcaster supplies part of the composition. |
+| Listening | The station name takes the headline. Fast attacks bend the foreground sheet. Sustained sound carries the underlying pigment forward, and silence lets the surface settle. FIP and KEXP can supply an artist and title during playback. | The broadcaster supplies part of the composition. |
 
 ## Signal and accessibility
 

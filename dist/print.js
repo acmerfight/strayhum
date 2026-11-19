@@ -22,7 +22,7 @@ class SignalSphere {
       uniform sampler2D plate;
       uniform vec2 center; uniform float height, radius, lat, lon;
       uniform vec3 energy, beacon, phrase;uniform float firstLight;uniform float phase, tint;
-      uniform vec2 pulse;
+      uniform vec2 current;
       // A continuous three-dimensional pigment field stays attached to the globe.
       float hash(vec3 p) { p=fract(p*.3183099+vec3(.17,.29,.43)); p*=17.; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
       float noise3(vec3 p) {
@@ -43,14 +43,27 @@ class SignalSphere {
         float land=texture2D(plate,vec2(fract(lambda/6.2831853+.5),.5-phi/3.14159265)).b;
         float distance=acos(clamp(dot(world,beacon),-1.,1.));
         float t=phase*.22;
-        float nearSource=exp(-distance*1.6);
-        float attack=pulse.y*exp(-3.*pulse.x);
-        float ink=nearSource*(phrase.y*.23+attack*.19+energy.x*.10);
+
+        vec3 east=normalize(cross(vec3(0.,1.,.005),beacon));
+        vec3 north=cross(beacon,east);
+        vec3 tangent=normalize(.84*east+.54*north);
+        vec3 normal=cross(beacon,tangent);
+        float u=dot(world,tangent), v=dot(world,normal);
+        float local=smoothstep(-.4,.85,dot(world,beacon));
+        float push=current.x, travel=current.y;
+        // Move pigment through a curved channel in the station's tangent plane.
+        // The foreground moves farther than the layer beneath it.
+        float axis=u+.16*sin(2.7*v+.5*travel);
+        float bend=.34*sin(2.9*axis+.42*sin(travel))+.26*axis*axis;
+        float influence=local*exp(-1.8*axis*axis);
+        float stroke=influence*(.49*push+.095*phrase.y);
+        float fold=v-bend+.09-stroke;
         vec3 q=world*1.47+vec3(.85,-.27,.4);
+        q-=influence*(normal*(.54*push+.11*phrase.y)+tangent*.18*sin(travel));
         vec3 flow=vec3(noise3(q+vec3(.17*t,2.,0.)),
                        noise3(q+vec3(4.,.12*t,1.7)),
                        noise3(q+vec3(2.3,5.,.11*t)))-.5;
-        q+=flow*(1.5+ink)+vec3(.05*sin(t),.07*cos(t*.8),.04*sin(t*.7));
+        q+=flow*1.32+vec3(.05*sin(t),.07*cos(t*.8),.04*sin(t*.7));
         float pool=noise3(q*1.68+.8*flow);
         float mist=noise3(q*3.8+pool*1.6);
         float glaze=.68*pool+.32*mist;
@@ -67,21 +80,27 @@ class SignalSphere {
         vec3 pale=mix(opal,amber,warmth);
         vec3 pigment=mix(indigo,mineral,smoothstep(.27,.58,glaze));
         pigment=mix(pigment,pale,smoothstep(.49,.72,glaze)*.88);
-        float front=pulse.x*1.4;
-        vec3 skew=normalize(beacon+vec3(.23,-.16,.14)*pulse.x);
-        float bloom=pulse.y*exp(-pow(abs(acos(clamp(dot(world,skew),-1.,1.))-front)/(.23+.16*pulse.x),2.))*(1.-pulse.x);
-        float voice=nearSource*(.46*phrase.y+.27*phrase.z+.08*energy.z)+bloom*.62;
         float wake=exp(-pow(abs(distance-firstLight*1.52)/.31,2.))*(1.-firstLight)*phrase.z;
-        pigment=mix(pigment,mix(amber,opal,tint*.48),clamp(voice+wake*.42,0.,.70));
-        vec3 sea=mix(deep,indigo,.14+.29*pool);
-        sea+=mineral*(.055+.19*smoothstep(.43,.80,glaze));
-        vec3 surface=mix(sea,pigment*(.50+.53*daylight),land);
+        vec3 sea=mix(deep,indigo,.12+.21*pool);
+        sea+=mineral*(.042+.12*smoothstep(.43,.80,glaze));
+        vec3 surface=mix(sea,pigment*(.44+.47*daylight),land);
+        // A broad translucent sheet and its folded lip give the beat a visible
+        // edge. The coast mask stays fixed while the sheet slips over it.
+        float edgeField=fold+.12*(mist-.5);
+        float body=smoothstep(-.49,-.11,edgeField)*(1.-smoothstep(-.025,.055,edgeField));
+        float lip=exp(-abs(edgeField+.025)*19.);
+        float veil=local*(.70+.30*daylight)*(.80+.20*mist);
+        vec3 silk=mix(vec3(.28,.55,.57),mix(opal,amber,.34),.33+.44*lip);
+        surface=mix(surface,silk,body*veil*(.38+.28*land));
+        surface+=veil*lip*(.16+.24*push+.09*energy.z)*mix(opal,amber,.52);
+        surface*=1.-.19*veil*exp(-abs(edgeField-.07)*13.);
+        surface+=pale*wake*.13;
         // One asymmetrical reflection grazes the dark side and clarifies the silhouette.
         float grazing=pow(max(0.,dot(n,normalize(vec3(-.73,.60,.32)))),7.);
         surface+=mix(jade,opal,.54)*grazing*(.09+.17*mist);
         surface+=mix(indigo,opal,daylight)*edge*(.30+.24*daylight);
         surface+=pow(1.-z,13.)*mix(rose,opal,daylight)*.54;
-        surface+=pale*(.07*voice+.09*wake);
+
         gl_FragColor=vec4(surface,clamp((1.-d)*radius,0.,1.));
       }`;
     function compile(type, source) {
@@ -127,7 +146,7 @@ class SignalSphere {
       "lon",
       "phase",
       "firstLight",
-      "pulse",
+      "current",
       "phrase",
       "tint",
       "energy",
@@ -172,11 +191,7 @@ class SignalSphere {
           ? Math.min(1, (performance.now() - view.firstLight) / 1900)
           : 1;
       g.uniform1f(u.firstLight, first);
-      const pulse = view.pulse;
-      const age = pulse
-        ? Math.min(1, (performance.now() - pulse.at) / 2100)
-        : 1;
-      g.uniform2f(u.pulse, age, pulse?.strength || 0);
+      g.uniform2f(u.current, view.flowPush, view.flowTravel);
       g.uniform3f(
         u.phrase,
         view.strike || 0,
