@@ -1,6 +1,7 @@
-/* Stray Hum: one small station at a time. Listen; when you want somewhere else, drift.
-   This file conducts: it starts tuning, flies the globe, holds the sound until the flight
-   lands, and remembers the night. */
+/* Stray Hum: one small station at a time, from anywhere on earth, seen through a window onto its
+   sky. Listen; when you want somewhere else, drift. This file conducts: it starts tuning, flies
+   the window there through the skies on the way, holds the sound until it lands, and remembers
+   the night. */
 const $ = (id) => document.getElementById(id);
 // A few servers send Safari to a plain-http address it cannot play; Safari never meets those stations.
 const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
@@ -8,7 +9,8 @@ const stations = window.STATIONS.filter((s) => !(safari && s.safari === false));
 const memory = new Encounters(stations);
 const receiver = new Receiver();
 const credit = new NowPlaying($('credit'));
-const plate = ['place', 'clock', 'name', 'genres', 'eyebrow'].map($);
+const outlook = new Outlook(stations);
+const plate = ['clock', 'place', 'name', 'genres', 'conditions'].map($);
 const statusText = {
   idle: '',
   tuning: 'Tuning',
@@ -23,21 +25,16 @@ let current = memory.first(params.get('station'));
 const sent = params.has('sent') && stations[current].id === params.get('station');
 let state = 'idle';
 let token = 0;
-let started = false;
-let beaconTarget = 0.55;
 let driftTimer = 0;
-let preview = { i: null, touch: false };
 let onPlate = null;
 let wandering = false;
+let voyage = null;
 
-const globe = new Globe({
-  stations,
-  onChoose: (i) => go(i),
-  onPreview: showPreview,
-  onInteract: () => hint.after('globe'),
-});
-globe.onPass = (i, speed) => receiver.pass(speed);
-globe.reduced ||= localStorage.getItem('strayhum.motion') === 'off';
+outlook.reduced ||= localStorage.getItem('strayhum.motion') === 'off';
+outlook.onPass = (i, speed) => {
+  receiver.pass(speed);
+  showPassing(i);
+};
 
 function setState(next) {
   state = next;
@@ -45,27 +42,29 @@ function setState(next) {
   $('status').textContent = statusText[next];
   const running = next === 'onair' || next === 'tuning' || next === 'wandering';
   $('play').setAttribute('aria-label', running ? 'Pause' : 'Listen');
-  globe.playing = running;
 }
 
-/** Tunes to a station: the globe flies there while the static plays, and the sound is let
-    through only when the flight lands, so image and music arrive together. */
-function go(i, { from = started ? current : null } = {}) {
+/** Tunes to a station: the window travels there while the static plays, and the sound is let
+    through only when it lands, so the sky and the music arrive together. */
+function go(i) {
   receiver.start();
-  started = true;
   clearTimeout(driftTimer);
-  closePreview();
   credit.clear();
   const t = ++token;
-  const landing = globe.fly(i, { from });
+  const from = current;
+  const landing = outlook.fly(i);
   current = i;
-  globe.focus(i);
-  beaconTarget = 0.35;
+  setVoyage(from, i, landing);
   if (onPlate !== i) {
     leavePlate();
     // Filled by station rather than by tuning, so a pause mid-flight still leaves a caption.
-    setTimeout(() => current === i && onPlate !== i && fillPlate(i, true), Math.max(0, (landing - performance.now()) * 0.42));
+    setTimeout(() => current === i && onPlate !== i && fillPlate(i, true), Math.max(0, (landing - performance.now()) * 0.55));
   }
+  // The weather is asked for at once, and settles in when the window lands.
+  weatherAt(stations[i]).then((w) => {
+    if (current !== i) return;
+    setTimeout(() => current === i && settleWeather(i, w), Math.max(0, landing - performance.now()));
+  });
   setState('tuning');
   history.replaceState(null, '', '?station=' + encodeURIComponent(stations[i].id));
   receiver.tune(stations[i], {
@@ -81,9 +80,8 @@ function arrive(i) {
   if (state === 'onair') return;
   receiver.arrive();
   setState('onair');
-  beaconTarget = 1;
-  // The first sound leaves the station as one wide ring.
-  globe.ring(1, 0.55);
+  // The first sound comes in from the horizon as one long swell.
+  outlook.swell(1);
   memory.arrive(i);
   refreshMemory();
   credit.follow(stations[i]);
@@ -101,13 +99,12 @@ function pause() {
   clearTimeout(driftTimer);
   receiver.stop();
   credit.clear();
-  beaconTarget = 0.55;
   setState('paused');
 }
 
 function toggle() {
   if (state === 'onair' || state === 'tuning') pause();
-  else go(current, { from: current });
+  else go(current);
 }
 
 function drift() {
@@ -115,37 +112,34 @@ function drift() {
   hint.after('drift');
 }
 
-/** Holding Drift turns the earth like a dial; letting go lands on the light under the needle. */
+/** Holding Drift turns the world past the window; letting go lands on the station nearest. */
 function startWander() {
   receiver.start();
-  started = true;
   token++;
   clearTimeout(driftTimer);
-  closePreview();
   credit.clear();
   receiver.wander();
   wandering = true;
-  beaconTarget = 0.15;
-  globe.startWander();
+  outlook.startWander();
+  leavePlate();
+  onPlate = null;
   setState('wandering');
   hint.after('wander');
 }
 
 function land() {
   wandering = false;
-  globe.stopWander();
-  globe.passing = null;
-  globe.hover(null);
-  go(globe.underNeedle());
+  outlook.stopWander();
+  hidePassing();
+  go(outlook.nearest());
 }
 
 /** Sends this station: the system share sheet on phones, a copied link elsewhere. */
 async function share() {
   const s = stations[current];
   const url = `https://strayhum.com/?station=${encodeURIComponent(s.id)}&sent`;
-  const touch = matchMedia('(pointer: coarse)').matches;
   try {
-    if (touch && navigator.share) {
+    if (matchMedia('(pointer: coarse)').matches && navigator.share) {
       await navigator.share({ title: `${s.name} — ${s.city}`, text: `Something I found on Stray Hum: ${s.name}, ${s.city}.`, url });
       return;
     }
@@ -170,7 +164,7 @@ function keep() {
   refreshMemory();
 }
 
-/* Plate ------------------------------------------------------------------ */
+/* The caption ---------------------------------------------------------------- */
 
 const clocks = new Map();
 
@@ -191,9 +185,24 @@ function fillPlate(i, animate) {
   $('genres').textContent = [s.alias, ...s.genres, s.freq].filter(Boolean).join(' · ');
   $('name').style.setProperty('--name-size', nameSize(s.name) + 'px');
   $('keep').setAttribute('aria-pressed', String(memory.isKept(i)));
-  document.querySelector('#here .city').textContent = s.city;
+  writeConditions(i, weatherCache.get(s.id)?.weather);
   document.title = `${s.name} — ${s.city} · Stray Hum`;
-  if (animate && !globe.reduced) enterPlate();
+  if (animate && !outlook.reduced) enterPlate();
+}
+
+/** "Light rain · 14° · 9 hours ahead of you": the place, felt from where you are. */
+function writeConditions(i, weather) {
+  const s = stations[i];
+  const parts = [];
+  if (weather?.words) parts.push(weather.words[0].toUpperCase() + weather.words.slice(1));
+  if (weather?.temperature !== null && weather?.temperature !== undefined) parts.push(temperatureText(weather.temperature));
+  parts.push(timeFromYou(s.zone));
+  $('conditions').textContent = parts.join(' · ');
+}
+
+function settleWeather(i, weather) {
+  outlook.weatherTarget = { ...weather };
+  writeConditions(i, weather);
 }
 
 /** Display size for a station name: long names step down so the caption keeps two lines at most. */
@@ -207,7 +216,7 @@ function nameSize(name) {
 }
 
 function leavePlate() {
-  if (globe.reduced) return;
+  if (outlook.reduced) return;
   plate.forEach((el, k) =>
     el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-8px)' }], {
       duration: 260,
@@ -220,47 +229,62 @@ function leavePlate() {
 
 function enterPlate() {
   const ease = 'cubic-bezier(.16,.84,.24,1)';
-  const [place, clock, name, genres] = plate;
+  const [clock, place, name, genres, conditions] = plate;
   for (const el of plate) el.getAnimations().forEach((a) => a.cancel());
   // The place resolves as if read off a map: letters close up as they appear.
   place.animate([{ opacity: 0, letterSpacing: '.5em' }, { opacity: 1, letterSpacing: '.22em' }], { duration: 1100, easing: ease, fill: 'backwards' });
   clock.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 700, delay: 380, easing: ease, fill: 'backwards' });
-  name.animate([{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], {
-    duration: 1150,
-    delay: 140,
-    easing: ease,
-    fill: 'backwards',
-  });
+  name.animate([{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], { duration: 1150, delay: 140, easing: ease, fill: 'backwards' });
   genres.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 900, delay: 320, easing: ease, fill: 'backwards' });
+  conditions.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 520, easing: ease, fill: 'backwards' });
 }
 
-/* Globe labels ------------------------------------------------------------ */
+/* In the sky: the voyage, and the cities the dial passes ---------------------------- */
 
-function showPreview(i, touch) {
-  const near = $('near');
-  if (i === null) return closePreview();
-  if (preview.i !== i) {
-    near.querySelector('.city').textContent = stations[i].city;
-    near.querySelector('.station').textContent = stations[i].name;
+/** "Accra → Tokyo", with the distance counting up as the window travels. */
+function setVoyage(from, to, landing) {
+  const a = stations[from];
+  const b = stations[to];
+  const km = kilometres(unitVector(a.lat, a.lon), unitVector(b.lat, b.lon));
+  if (from === to || km < 50 || outlook.reduced) {
+    voyage = null;
+    $('voyage').classList.remove('shown');
+    return;
   }
-  preview = { i, touch };
-  near.classList.toggle('preview', touch);
+  voyage = { km, landing };
+  $('route-from').textContent = a.city;
+  $('route-to').textContent = b.city;
+  const hours = Math.round((zoneOffset(b.zone) - zoneOffset(a.zone)) / 30) / 2;
+  $('route-time').textContent = hours ? `${hours > 0 ? '+' : '−'}${Math.abs(hours)} h` : 'same hour';
+  $('voyage').classList.add('shown');
 }
 
-function closePreview() {
-  preview = { i: null, touch: false };
-  globe.previewed = null;
-  $('near').classList.remove('preview');
+function drawVoyage() {
+  if (!voyage) return;
+  $('route-km').textContent = `${Math.round(voyage.km * outlook.progress).toLocaleString('en-US')} km`;
+  if (performance.now() > voyage.landing + 900) {
+    voyage = null;
+    $('voyage').classList.remove('shown');
+  }
 }
 
-$('near').querySelector('.go').addEventListener('click', () => preview.i !== null && go(preview.i));
+function showPassing(i) {
+  const el = $('passing');
+  el.querySelector('.city').textContent = stations[i].city;
+  el.querySelector('time').textContent = clockAt(stations[i]);
+  el.classList.remove('shown');
+  void el.offsetWidth;
+  el.classList.add('shown');
+}
+
+function hidePassing() {
+  $('passing').classList.remove('shown');
+}
 
 /* Memory: kept stations and tonight's route ----------------------------------- */
 
 function refreshMemory() {
-  const kept = new Set(memory.keptIndices().map((k) => k.i));
-  globe.refreshMarks(kept, memory.heardSet());
-  const n = kept.size;
+  const n = memory.keptIndices().length;
   $('kept-count').textContent = n ? String(n) : '';
 }
 
@@ -308,7 +332,7 @@ function renderLog() {
     li.querySelector('span').textContent = `${stations[i].city} · ${stations[i].name}`;
     route.append(li);
   });
-  if (!path.length) route.innerHTML = '<li class="empty">Where you listen tonight is drawn on the globe.</li>';
+  if (!path.length) route.innerHTML = '<li class="empty">The places you listen tonight will be here.</li>';
 }
 
 /* First-visit hints: one sentence at a time, then never again. --------------- */
@@ -334,14 +358,12 @@ const hint = {
       localStorage.setItem('strayhum.dial', '1');
       this.hide();
     }
-    if (moment === 'drift' && this.seen && !this.dial) this.show('Hold Drift to turn the dial yourself.', 7000);
+    if (moment === 'arrive' && this.seen && !this.dial) this.show('Hold Drift to turn the world past the window.', 7000);
     if (this.seen) return;
-    if (moment === 'arrive' && !this.dragged) this.show('Every light is a station. Drag the earth, or drift.', 9000);
-    if (moment === 'globe') this.dragged = true;
+    if (moment === 'arrive') this.show('This is their sky, right now. Drift when you want somewhere else.', 8000);
     if (moment === 'drift') {
       this.seen = true;
       localStorage.setItem('strayhum.seen', '1');
-      this.hide();
     }
   },
 };
@@ -352,7 +374,7 @@ $('play').onclick = toggle;
 $('keep').onclick = keep;
 $('share').onclick = share;
 
-// Drift: a press drifts by chance; a hold turns the dial.
+// Drift: a press drifts by chance; a hold turns the world.
 {
   const button = $('drift');
   let hold = 0;
@@ -388,31 +410,28 @@ $('volume').value = String(receiver.volume);
 $('volume').oninput = (e) => receiver.setVolume(Number(e.target.value));
 $('static-toggle').checked = receiver.staticOn;
 $('static-toggle').onchange = (e) => receiver.setStatic(e.target.checked);
-$('motion-toggle').checked = !globe.reduced;
+$('motion-toggle').checked = !outlook.reduced;
 $('motion-toggle').onchange = (e) => {
-  globe.reduced = !e.target.checked;
+  outlook.reduced = !e.target.checked;
   localStorage.setItem('strayhum.motion', e.target.checked ? 'on' : 'off');
 };
 
+let keyHold = 0;
 addEventListener('keydown', (e) => {
   if ($('log').open || e.metaKey || e.ctrlKey || e.altKey) return;
   const onControl = e.target.closest?.('button, input');
   if (e.key === ' ' && !onControl) {
     e.preventDefault();
     toggle();
-  } else if (e.key === 'd' || e.key === 'D') {
-    // As with the button: tap to drift, hold to turn the dial.
-    if (!e.repeat) keyHold = setTimeout(startWander, 280);
-  } else if (e.key === 'ArrowRight' && e.target !== $('ink') && !onControl) {
+  } else if ((e.key === 'd' || e.key === 'D') && !e.repeat) {
+    // As with the button: tap to drift, hold to turn the world.
+    keyHold = setTimeout(startWander, 280);
+  } else if (e.key === 'ArrowRight' && !onControl) {
     drift();
   } else if (e.key === 'k' || e.key === 'K') {
     keep();
-  } else if (e.key === 'Escape') {
-    closePreview();
   }
 });
-
-let keyHold = 0;
 addEventListener('keyup', (e) => {
   if (e.key !== 'd' && e.key !== 'D') return;
   clearTimeout(keyHold);
@@ -423,7 +442,7 @@ addEventListener('keyup', (e) => {
 /* Frame loop ---------------------------------------------------------------- */
 
 let last = performance.now();
-let revealStart = null;
+let revealStart = performance.now();
 let slow = 0;
 
 function frame(now) {
@@ -433,15 +452,23 @@ function frame(now) {
   slow = dt > 0.024 ? slow + dt : Math.max(0, slow - dt);
   if (slow > 2) {
     slow = 0;
-    globe.degrade();
+    outlook.degrade();
   }
   const sound = state === 'onair' ? receiver.sample(dt) : null;
-  if (sound?.hit) globe.ring(sound.hit * 0.85, sound.score.speed);
-  globe.beaconOn = (globe.beaconOn ?? 0) + (beaconTarget - (globe.beaconOn ?? 0)) * Math.min(1, dt * 2.5);
-  if (revealStart !== null) globe.reveal = globe.reduced ? 1 : Math.min(1, (now - revealStart) / 2800);
-  globe.frame(now, dt, sound);
+  if (sound?.hit) outlook.swell(sound.hit);
+  outlook.reveal = outlook.reduced ? 1 : Math.min(1, (now - revealStart) / 2200);
+  const light = outlook.frame(now, dt, sound);
+  document.body.dataset.tone = outlook.tone;
+  // Fallback without WebGL2: the page itself carries the sky's colours.
+  if (!outlook.ok) paintFallback(light);
+  drawVoyage();
   document.body.style.setProperty('--level', (sound?.level ?? 0).toFixed(3));
   if (!document.hidden) requestAnimationFrame(frame);
+}
+
+function paintFallback(light) {
+  const css = (c) => `rgb(${c.map((x) => Math.round(clamp(x, 0, 1) * 255)).join(',')})`;
+  document.body.style.background = `linear-gradient(${css(light.zenith)}, ${css(light.horizon)} var(--horizon), #05070c var(--horizon))`;
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -453,28 +480,24 @@ document.addEventListener('visibilitychange', () => {
 
 setInterval(() => {
   $('clock').textContent = clockAt(stations[current]);
-  globe.sun = sunDirection(new Date());
 }, 15000);
 
 /* Start --------------------------------------------------------------------- */
 
 {
   const s = stations[current];
-  // Begin a little to the west of the first encounter, so the earth turns it into view.
-  globe.lon = s.lon - 34;
-  globe.lat = clamp(s.lat * 0.7, -50, 55);
-  globe.focus(current);
-  globe.remember(memory.path());
+  outlook.stand(current);
   refreshMemory();
   fillPlate(current, false);
+  const first = current;
+  weatherAt(s).then((w) => current === first && !outlook.flight && settleWeather(first, w));
   if (sent) $('eyebrow').textContent = 'Someone sent you this';
   setState('idle');
-  // A still of the engraving for link previews: no controls, the globe set like a print.
+  // A still for link previews: no controls, the name set over the sea.
   if (params.has('poster')) {
     document.body.classList.add('poster');
-    globe.resize();
+    outlook.resize();
   }
   if (!hint.seen) hint.show('Listen. When you want somewhere else, drift.');
-  (globe.ok ? globe.sky.ready : Promise.resolve()).then(() => (revealStart = performance.now()));
   requestAnimationFrame(frame);
 }

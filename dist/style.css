@@ -1,4 +1,5 @@
-/* Stray Hum. One ink, one bone white for the engraving, one amber for the signal. */
+/* Stray Hum. The sky over the station is the colour; words are bone white, or ink when the sky is bright;
+   amber means only the signal. */
 
 /* Bodoni Moda and Geist, SIL Open Font License 1.1: see fonts/OFL-*.txt */
 /* Bodoni Moda italic, latin-ext */
@@ -66,7 +67,7 @@
 }
 
 :root {
-  --ink: #0b0c0e;
+  --ink: #05070c;
   --panel: #0f1114;
   --bone: #e9e3d6;
   --bone-80: rgba(233, 227, 214, 0.8);
@@ -95,7 +96,7 @@ body {
 }
 
 body {
-  background: radial-gradient(ellipse 80% 75% at 55% 47%, #121419 0%, #0c0d10 56%, #08090b 100%) var(--ink);
+  background: var(--ink);
   color: var(--bone);
   font: 400 14px/1.45 var(--sans);
   font-feature-settings: 'tnum' 0;
@@ -130,31 +131,43 @@ svg {
   stroke-linejoin: round;
 }
 
-/* When the map runs under the caption and the deck, a soft shade keeps them legible. */
+/* The caption and the deck stand on the sea; a shade deepens the water under them. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 48% 40% at 0% 100%, rgba(11, 12, 14, 0.88), rgba(11, 12, 14, 0) 72%),
-    radial-gradient(ellipse 36% 30% at 100% 100%, rgba(11, 12, 14, 0.85), rgba(11, 12, 14, 0) 72%),
-    linear-gradient(rgba(11, 12, 14, 0.7), rgba(11, 12, 14, 0) 110px);
+  background: linear-gradient(to top, rgba(3, 4, 8, 0.6) 0, rgba(3, 4, 8, 0.25) 24%, rgba(3, 4, 8, 0) 40%);
 }
 
-#sky,
-#ink {
+#sky {
   position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-#ink {
-  cursor: grab;
-  touch-action: none;
-  outline: none;
+/* Words in the sky turn to ink when the sky behind them is bright. */
+.top,
+.voyage,
+.passing,
+.hint {
+  --word: var(--bone);
+  --word-soft: var(--bone-60);
+  color: var(--word);
+  transition: color 1.2s;
+}
+
+body[data-tone='light'] :is(.top, .voyage, .passing) {
+  --word: #10131a;
+  --word-soft: rgba(16, 19, 26, 0.6);
+}
+
+@media (max-width: 719px), (max-aspect-ratio: 4/5) {
+  body[data-tone='light'] .hint {
+    --word-soft: rgba(16, 19, 26, 0.6);
+  }
 }
 
 /* Header ----------------------------------------------------------------- */
@@ -180,7 +193,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 11px;
-  color: var(--bone);
+  color: var(--word);
   text-decoration: none;
   /* Roman, at a small optical size: the title of an atlas plate, and its hairlines hold at this size. */
   font: 400 25px/1 var(--serif);
@@ -196,7 +209,7 @@ body::before {
 }
 
 .wordmark .dot {
-  fill: var(--bone);
+  fill: var(--word);
   stroke: none;
   transition: fill 0.6s;
 }
@@ -211,7 +224,7 @@ body[data-state='onair'] .wordmark .dot {
 
 .tagline {
   margin: 0;
-  color: var(--bone-45);
+  color: var(--word-soft);
   font-size: 12.5px;
   letter-spacing: 0.02em;
 }
@@ -221,19 +234,19 @@ body[data-state='onair'] .wordmark .dot {
   align-items: baseline;
   gap: 8px;
   padding: 10px 2px;
-  color: var(--bone-60);
+  color: var(--word-soft);
   font-size: 13px;
   letter-spacing: 0.04em;
   transition: color 0.2s;
 }
 
 .quiet:hover {
-  color: var(--bone);
+  color: var(--word);
 }
 
 .count {
   min-width: 1ch;
-  color: var(--bone);
+  color: var(--word);
   font-feature-settings: 'tnum' 1;
 }
 
@@ -307,6 +320,13 @@ body[data-state='wandering'] #name {
   margin: 0;
   color: var(--bone-60);
   font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.conditions {
+  margin: 6px 0 0;
+  color: var(--bone-45);
+  font-size: 13px;
   letter-spacing: 0.01em;
 }
 
@@ -591,92 +611,105 @@ body[data-state='tuning'] .status::before {
   right: var(--edge);
   bottom: calc(var(--foot) + 104px);
   margin: 0;
-  color: var(--bone-45);
+  color: var(--word-soft);
   font-size: 12.5px;
   transition: opacity 0.8s;
   z-index: 2;
 }
 
-/* Labels beside lights on the globe, lettered like a map ------------------- */
+/* In the sky: where the window is travelling, and what the dial passes ---------- */
 
-.mark-label {
+.voyage,
+.passing {
   position: fixed;
   left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.35s;
+  right: 0;
+  top: calc(var(--horizon) * 0.44);
   z-index: 1;
-  will-change: transform;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  pointer-events: none;
+  text-align: center;
+  opacity: 0;
+  transition:
+    opacity 0.9s,
+    color 1.2s;
 }
 
-.mark-label.shown {
+.voyage.shown {
   opacity: 1;
 }
 
-.mark-label .box {
-  position: absolute;
-  left: 14px;
-  top: -0.62em;
+.voyage p {
+  margin: 0;
+}
+
+.legs {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  font-size: 10.5px;
-  white-space: nowrap;
-}
-
-.mark-label.left .box {
-  left: auto;
-  right: 14px;
-  align-items: flex-end;
-  text-align: right;
-}
-
-.mark-label.below .box {
-  top: 12px;
-}
-
-.mark-label .city,
-.near .station {
-  text-shadow:
-    0 0 6px var(--ink),
-    0 0 14px var(--ink);
-}
-
-.mark-label .city {
-  color: var(--bone-80);
-  font-size: 10.5px;
-  line-height: 1.2;
-  letter-spacing: 0.26em;
+  align-items: center;
+  font-size: 11.5px;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
 }
 
-#here .city {
-  color: var(--bone);
+.legs .arrow {
+  width: 72px;
+  height: 1px;
+  margin: 0 20px 0 14px;
+  background: currentColor;
+  opacity: 0.45;
 }
 
-.near .station {
-  margin-top: 4px;
-  font: italic 400 18px/1.1 var(--serif);
-  font-variation-settings: 'opsz' 10;
+.measure {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  font: 300 26px/1 var(--sans);
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0.02em;
 }
 
-.near .go {
-  display: none;
-  margin-top: 10px;
-  padding: 9px 16px;
-  border-radius: 18px;
-  background: var(--bone);
-  color: var(--ink);
-  font-size: 13px;
-  letter-spacing: 0.01em;
-  pointer-events: auto;
+.measure #route-time {
+  color: var(--word-soft);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
-.near.preview .go {
-  display: block;
+.passing .city {
+  font: italic 400 44px/1 var(--serif);
+  font-variation-settings: 'opsz' 18;
+}
+
+.passing time {
+  color: var(--word-soft);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* A city passing the window: it comes up, holds for a breath, and goes. */
+.passing.shown {
+  animation: pass 1.3s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+@keyframes pass {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  25% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* Log: kept stations, tonight's route, settings --------------------------- */
@@ -895,7 +928,7 @@ body[data-state='tuning'] .status::before {
   white-space: nowrap;
 }
 
-/* Phones and narrow windows: the globe on top, the caption and the deck below. */
+/* Phones and narrow windows: the sky on top, the caption and the deck on the sea. */
 @media (max-width: 719px), (max-aspect-ratio: 4/5) {
   :root {
     --edge: 22px;
@@ -920,9 +953,15 @@ body[data-state='tuning'] .status::before {
   }
 
   body::before {
-    background:
-      linear-gradient(to top, rgba(11, 12, 14, 0.92) 0, rgba(11, 12, 14, 0.75) 30%, rgba(11, 12, 14, 0) 46%),
-      linear-gradient(rgba(11, 12, 14, 0.7), rgba(11, 12, 14, 0) 90px);
+    background: linear-gradient(to top, rgba(3, 4, 8, 0.7) 0, rgba(3, 4, 8, 0.3) 30%, rgba(3, 4, 8, 0) 48%);
+  }
+
+  .passing .city {
+    font-size: 34px;
+  }
+
+  .measure {
+    font-size: 22px;
   }
 
   .plate {
@@ -1032,12 +1071,14 @@ body[data-state='tuning'] .status::before {
   }
 }
 
-/* The link-preview still: the globe set like a print, the name beside it. */
-body.poster :is(.deck, .plate, .hint, .mark-label, #log-open, .tagline) {
+/* The link-preview still: a window onto a sky, the name over the sea. */
+body.poster :is(.deck, .plate, .hint, .voyage, .passing, #log-open, .tagline) {
   display: none;
 }
 
 body.poster .top {
+  --word: var(--bone);
+  --word-soft: var(--bone-60);
   top: auto;
   bottom: 64px;
   left: 72px;

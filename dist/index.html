@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="theme-color" content="#0b0c0e" />
+    <meta name="theme-color" content="#05070c" />
     <title>Stray Hum — chance encounters with music from all over the world</title>
     <meta name="description" content="One small radio station at a time, from anywhere on earth. Listen, then drift somewhere else." />
     <link rel="canonical" href="https://strayhum.com/" />
@@ -18,30 +18,25 @@
     <link rel="icon" href="mark.svg" type="image/svg+xml" />
     <link rel="preload" href="fonts/bodoni-moda-italic-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="fonts/geist-normal-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="coast.png" as="image" />
-    <link rel="stylesheet" href="style.css?v=dial-1" />
-    <script defer src="stations.js?v=dial-1"></script>
-    <script defer src="sky.js?v=dial-1"></script>
-    <script defer src="globe.js?v=dial-1"></script>
-    <script defer src="signal.js?v=dial-1"></script>
-    <script defer src="encounter.js?v=dial-1"></script>
-    <script defer src="nowplaying.js?v=dial-1"></script>
-    <script defer src="app.js?v=dial-1"></script>
+    <link rel="stylesheet" href="style.css?v=sky-1" />
+    <script defer src="stations.js?v=sky-1"></script>
+    <script defer src="daylight.js?v=sky-1"></script>
+    <script defer src="weather.js?v=sky-1"></script>
+    <script defer src="sky.js?v=sky-1"></script>
+    <script defer src="outlook.js?v=sky-1"></script>
+    <script defer src="signal.js?v=sky-1"></script>
+    <script defer src="encounter.js?v=sky-1"></script>
+    <script defer src="nowplaying.js?v=sky-1"></script>
+    <script defer src="app.js?v=sky-1"></script>
   </head>
   <body data-state="idle">
     <canvas id="sky" aria-hidden="true"></canvas>
-    <canvas
-      id="ink"
-      tabindex="0"
-      aria-label="The globe. Drag or use the arrow keys to turn it, scroll or pinch to zoom. Each light is a station; select one to listen."
-    ></canvas>
-    <div class="mark-label" id="here" aria-hidden="true"><div class="box"><span class="city"></span></div></div>
-    <div class="mark-label near" id="near">
-      <div class="box">
-        <span class="city"></span><span class="station"></span
-        ><button class="go" type="button">Listen</button>
-      </div>
+
+    <div class="voyage" id="voyage" aria-hidden="true">
+      <p class="legs"><span id="route-from"></span><span class="arrow"></span><span id="route-to"></span></p>
+      <p class="measure"><span id="route-km"></span><span id="route-time"></span></p>
     </div>
+    <div class="passing" id="passing" aria-hidden="true"><span class="city"></span><time></time></div>
 
     <header class="top">
       <a class="wordmark" href="./" aria-label="Stray Hum">
@@ -63,6 +58,7 @@
       <p class="whereabouts"><time id="clock"></time><span id="place"></span></p>
       <h1 id="name"></h1>
       <p class="genres" id="genres"></p>
+      <p class="conditions" id="conditions"></p>
       <p class="credit" id="credit" hidden></p>
     </section>
 
@@ -79,7 +75,7 @@
         <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6v12M16 6v12" /></svg>
         <span class="breath" aria-hidden="true"></span>
       </button>
-      <button id="drift" class="pill" type="button" aria-keyshortcuts="D ArrowRight" title="Press to drift. Hold to turn the dial.">
+      <button id="drift" class="pill" type="button" aria-keyshortcuts="D ArrowRight" title="Press to drift somewhere else. Hold to turn the world past the window.">
         <span>Drift</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M14 7l5 5-5 5" /></svg>
       </button>
@@ -107,13 +103,14 @@
       <label class="toggle"><input id="motion-toggle" type="checkbox" /><span>Motion</span></label>
       <p class="keys">Space listen or pause · D drift, hold D to turn the dial · K keep</p>
       <p class="about">
-        Each light is a small or independent station, checked to be on air when this map was made. Some will have
-        faded since; Stray Hum drifts on when that happens.
+        Each station is small or independent, and was checked to be on air when this list was made. Some will have
+        faded since; Stray Hum drifts on when that happens. The sky is the sky over the station now: the sun where it
+        stands for them, and their weather.
       </p>
       <p class="credits">
         Stations from <a href="https://www.radio-browser.info/" target="_blank" rel="noreferrer">Radio Browser</a> ·
-        places from <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · coastlines from
-        <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>
+        places from <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> · weather from
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>
       </p>
     </dialog>
   </body>

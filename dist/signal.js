@@ -1,6 +1,6 @@
 /* The receiver. One station plays at a time; between stations there is static, and the sound
-   that arrives is measured so the globe can answer it. Streams that allow cross-origin reading
-   go through an analyser; the others play directly and the globe breathes on its own. */
+   that arrives is measured so the sea can answer it. Streams that allow cross-origin reading
+   go through an analyser; the others play directly and the sea breathes on its own. */
 const SCORES = {
   // Ring speed in radians per second, how long a ring waits before the next, and how the glow follows.
   electronic: { speed: 0.62, spacing: 0.2, rise: 0.25, release: 0.3 },

@@ -1,229 +1,215 @@
-/* The engraved globe, drawn with WebGL2 from one distance-to-coast texture.
-   Coast, water lines and hatching are hairlines shaded by the real sun; stations are points
-   of light; the playing station's sound travels across the surface as rings. */
-const SURFACE_VERTEX = `#version 300 es
+/* The window: the sky over the station right now, a horizon, and the sea below it, where the
+   music lands. One full-screen WebGL2 pass; the colours, clouds and sun come from daylight.js
+   and weather.js, the swells and the glitter from the measured sound. */
+const VERTEX = `#version 300 es
 in vec2 corner;
 void main() { gl_Position = vec4(corner, 0., 1.); }`;
 
-const SURFACE_FRAGMENT = `#version 300 es
+const FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D coast;
-uniform vec2 center;
-uniform float radius;
-uniform mat3 view;
-uniform vec3 sun;
-uniform vec3 beacon;
-uniform float beaconOn;
-uniform vec2 rings[8];
-uniform float ringWidth;
-uniform float glow;
-uniform float reveal;
+uniform vec2 res;
 uniform float dpr;
+uniform float horizon;
+uniform vec3 zenith;
+uniform vec3 low;
+uniform vec3 glow;
+uniform vec2 sun;
+uniform vec2 moon;
+uniform float moonLight;
+uniform float elongation;
+uniform float day;
+uniform float night;
+uniform float cloud;
+uniform float rain;
+uniform float snow;
+uniform float fog;
+uniform float time;
+uniform float level;
+uniform float seed;
+uniform float reveal;
+uniform float calm;
+uniform vec2 swells[6];
 out vec4 color;
 
-const float PI = 3.14159265;
-const float MAX_DEGREES = 6.;
-const vec3 OCEAN = vec3(.043, .047, .058);
-const vec3 BONE = vec3(.914, .89, .839);
-const vec3 AMBER = vec3(1., .66, .3);
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
 
-// Coverage of a line of the given half width. Lines thinner than a pixel get dimmer, not jagged.
-float line(float dist, float aa, float halfWidth) {
-  float w = max(halfWidth, .5 * aa);
-  return clamp((w - dist) / aa + .5, 0., 1.) * min(1., halfWidth / (.5 * aa));
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3. - 2. * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0., a = .5;
+  for (int i = 0; i < 5; i++) {
+    v += a * noise(p);
+    p = p * 2.03 + 17.1;
+    a *= .5;
+  }
+  return v;
+}
+
+// The clear sky at a screen point: the gradient from horizon to zenith, light gathered around
+// the sun, and haze lying on the horizon.
+vec3 clearSky(vec2 uv, float aspect) {
+  float t = clamp((uv.y - horizon) / (1. - horizon), 0., 1.);
+  vec3 c = mix(low, zenith, pow(t, .5));
+  vec2 d = (uv - vec2(sun.x, horizon + sun.y)) * vec2(aspect, 1.);
+  float r = length(d);
+  c += glow * (exp(-r * 3.4) * .42 + exp(-r * r * 70.) * .5);
+  vec2 dm = (uv - vec2(moon.x, horizon + moon.y)) * vec2(aspect, 1.);
+  float rm = length(dm);
+  c += vec3(.5, .58, .72) * moonLight * night * (exp(-rm * 5.) * .1 + exp(-rm * rm * 260.) * .16);
+  c *= 1. + vec3(.35, .45, .7) * moonLight * night * .8;
+  // At night the horizon keeps a little light: the glow of towns and the air itself.
+  c += vec3(.03, .036, .055) * night * exp(-t * 7.);
+  // By day the air softens every colour a little.
+  c = mix(c, vec3(dot(c, vec3(.3, .59, .11))), .12 * day);
+  return mix(c, low * 1.05 + glow * .06, exp(-t * 10.) * .45);
+}
+
+// The moon's disc, lit on the side that faces the sun. Elongation is the sun-moon angle: 0 is new, pi is full.
+vec3 moonDisc(vec3 c, vec2 uv, float aspect, float hidden) {
+  float radius = .017;
+  vec2 d = (uv - vec2(moon.x, horizon + moon.y)) * vec2(aspect, 1.) / radius;
+  float r = length(d);
+  if (r > 1.2) return c;
+  // The lit limb faces the sun's side of the window.
+  float side = sun.x >= moon.x ? 1. : -1.;
+  vec3 n = vec3(d.x * side, d.y, sqrt(max(0., 1. - r * r)));
+  vec3 light = vec3(sin(elongation), .15 * sign(sun.y - moon.y), -cos(elongation));
+  float lit = smoothstep(-.06, .08, dot(n, normalize(light)));
+  float mottled = .86 + .14 * noise(d * 2.4 + 9.);
+  float edge = smoothstep(1., .9, r);
+  vec3 surface = vec3(.94, .92, .86) * lit * mottled + vec3(.03, .035, .05);
+  float shown = edge * step(0., moon.y + .004) * (1. - hidden) * smoothstep(0., .03, moonLight + .02);
+  return mix(c, surface, shown);
+}
+
+// Clouds, from scattered to overcast. By day they take the light of the sky; at night they are
+// dark, faintly lit from below by the town.
+vec3 clouds(vec3 c, vec2 uv, float aspect, out float cover) {
+  float t = clamp((uv.y - horizon) / (1. - horizon), 0., 1.);
+  vec2 p = vec2((uv.x - .5) * aspect / (t * .9 + .12), 1. / (t + .16));
+  p = p * vec2(.9, 1.4) + vec2(time * .012 + seed * 13., seed * 7.);
+  float shape = fbm(p);
+  cover = smoothstep(1.02 - cloud * .9, 1.3 - cloud * .9, shape + cloud * .35) * smoothstep(0., .05, t);
+  float lum = dot(zenith, vec3(.3, .59, .11));
+  vec3 lit = mix(vec3(lum * 1.35 + .05), low * 1.1 + glow * .25, .35);
+  vec3 under = vec3(.036, .042, .058) + vec3(.07, .042, .02) * exp(-t * 5.) + vec3(.1, .11, .13) * moonLight;
+  vec3 tone = mix(lit, under, night * .85);
+  tone *= .82 + .3 * fbm(p * 2.3 + 4.);
+  c = mix(c, tone, cover * .92);
+  // A sky entirely covered goes to one soft grey.
+  return mix(c, mix(tone, low, .25), smoothstep(.75, 1., cloud) * .7);
 }
 
 void main() {
-  vec2 p = (gl_FragCoord.xy - center) / radius;
-  float px = 1. / radius;
-  float d = length(p);
-  float limb = line(abs(d - 1.), px, .5 * px);
-  // A thin atmosphere, lit only where the sun is on the limb.
-  if (d > 1.) {
-    vec3 edgeWorld = transpose(view) * vec3(p / d, 0.);
-    float lit = smoothstep(-.25, .65, dot(edgeWorld, sun));
-    float air = exp(-(d - 1.) / (14. * px)) * .07 * mix(.18, 1., lit) * smoothstep(0., .5, reveal);
-    float limbOut = limb * .3 * smoothstep(0., .3, reveal);
-    float a = clamp(air + limbOut, 0., 1.);
-    color = vec4(BONE * a, a);
-    return;
+  vec2 uv = gl_FragCoord.xy / res;
+  float aspect = res.x / res.y;
+  float px = dpr / res.y;
+  vec3 c;
+  float sunUp = smoothstep(-.06, .01, sun.y);
+
+  if (uv.y >= horizon) {
+    c = clearSky(uv, aspect);
+    float cover = 0.;
+    // Stars, only where it is dark and the sky is clear.
+    vec2 cell = floor(gl_FragCoord.xy / (9. * dpr));
+    float h = hash(cell + seed);
+    if (h > .978) {
+      vec2 at = (cell + .5 + (vec2(hash(cell + 3.), hash(cell + 7.)) - .5) * .7) * 9. * dpr;
+      float twinkle = .65 + .35 * sin(time * (1. + 2. * hash(cell + 11.)) + h * 60.);
+      float star = exp(-dot(gl_FragCoord.xy - at, gl_FragCoord.xy - at) / (dpr * dpr * .9));
+      float bright = pow((h - .978) / .022, 2.) * 1.6 + .25;
+      c += vec3(.85, .88, 1.) * star * twinkle * night * bright * (1. - moonLight * .55) * smoothstep(horizon, horizon + .12, uv.y);
+    }
+    if (cloud > .02) c = clouds(c, uv, aspect, cover);
+    // The sun's disc, when it is above the horizon and not behind cloud.
+    vec2 d = (uv - vec2(sun.x, horizon + sun.y)) * vec2(aspect, 1.);
+    float disc = smoothstep(.0105, .0085, length(d)) * sunUp * (1. - cover) * (1. - smoothstep(.6, .95, cloud));
+    c = mix(c, glow * 1.15 + .1, disc);
+    c = moonDisc(c, uv, aspect, cover * .8);
+  } else {
+    // The sea: the sky mirrored and darkened, long swell, a glitter path under the sun.
+    float depth = (horizon - uv.y) / horizon;
+    float z = 1. / (depth + .04);
+    vec2 sp = vec2((uv.x - .5) * aspect * z * .35, z);
+    float swell = sin(sp.y * 1.6 - time * .7 + sin(sp.x * .8 + time * .1) * .7);
+    float chop = noise(sp * vec2(4.5, 1.6) - vec2(0., time * 1.1));
+    vec2 mirror = vec2(uv.x + (chop - .5) * .012 * depth, horizon + (horizon - uv.y) * .55 + swell * .004);
+    vec3 sky = clearSky(mirror, aspect);
+    float lum = dot(zenith, vec3(.3, .59, .11));
+    vec3 deep = vec3(.008, .011, .018) + zenith * .1;
+    c = mix(sky * mix(.36, .6, day), deep, smoothstep(0., .9, depth) * mix(.6, .35, day));
+    c *= mix(1., .55, cloud * .6);
+    c += sky * .08 * swell * (1. - depth);
+    // The glitter path widens toward you and sparkles harder when the music is loud.
+    float dx = (uv.x - sun.x) * aspect;
+    float width = .012 + .17 * depth;
+    float path = exp(-dx * dx / (width * width)) * mix(.12, 1., sunUp) * (1. - cloud * .85);
+    float sparkle = pow(noise(vec2(sp.x * 10. + chop * 2., sp.y * 2.6 - time * 1.8)), 7.) * (1. + 5. * level);
+    // Near the viewer the light breaks into many small glints: short horizontal flecks, as on real water.
+    float fleck = pow(noise(vec2(uv.x * aspect * 140. + chop * 3., uv.y * 520. - time * 4.)), 9.) * 4.;
+    sparkle = mix(sparkle, fleck * (1. + 3. * level), smoothstep(.04, .32, depth));
+    // The water nearest you, where the caption stands, stays calm enough to read over.
+    sparkle *= 1. - calm * smoothstep(.3, .75, depth);
+    c += glow * path * (.12 + sparkle * 2.2) * (1. - night * .7);
+    // At night the moon lays its own path, silver, at its own bearing.
+    float mdx = (uv.x - moon.x) * aspect;
+    float moonPath = exp(-mdx * mdx / (width * width)) * moonLight * night * (1. - cloud * .8) * step(0., moon.y);
+    c += vec3(.62, .68, .8) * moonPath * (.06 + sparkle * 1.4);
+    // Each beat sends a swell from the horizon toward you.
+    for (int i = 0; i < 6; i++) {
+      float s = swells[i].y;
+      if (s <= 0.) continue;
+      float band = exp(-pow((sp.y - swells[i].x) * (1.3 + 3. / swells[i].x), 2.));
+      c += mix(low, glow, .5) * band * s * (.06 + .1 * (1. - night)) * (.6 + .4 * chop);
+    }
   }
-  float inside = clamp((1. - d) / px + .5, 0., 1.) * smoothstep(0., .25, reveal);
-  float z = sqrt(max(0., 1. - d * d));
-  vec3 w = transpose(view) * vec3(p, z);
-  float lat = asin(clamp(w.y, -1., 1.));
-  float lon = atan(w.x, w.z);
-  float latDeg = degrees(lat);
 
-  float sdf = (texture(coast, vec2(lon / (2. * PI) + .5, .5 - lat / PI)).r - .5) * 2. * MAX_DEGREES;
-  float aaS = max(fwidth(sdf), 1e-4);
-  float day = smoothstep(-.1, .3, dot(w, sun));
-  float rim = mix(.45, 1., sqrt(z));
+  // The horizon itself: a seam of light no wider than a pixel or two.
+  c += mix(low, glow, .4) * exp(-abs(uv.y - horizon) / (1.2 * px)) * .18 * (1. - fog);
 
-  // The coast, one pixel wide at any zoom.
-  float coastA = line(abs(sdf), aaS, .55 * aaS) * mix(.3, .88, day) * smoothstep(0., .3, reveal);
+  // Fog lowers everything toward one pale, near tone.
+  vec3 haze = mix(low * 1.05, vec3(dot(low, vec3(.33))), .5);
+  c = mix(c, haze, fog * (.75 - .35 * abs(uv.y - horizon)));
 
-  // Line spacing on screen: a little wider on dense displays, so lines stay distinct.
-  float pxPerDegree = radius * PI / 180.;
-  float spacing = 7. * pow(dpr, .55);
-
-  // Water lines, cut farther apart the farther they are from the shore.
-  float sea = max(-sdf, 0.);
-  float unit = max(.28, spacing / pxPerDegree);
-  float t = (sqrt(1. + 1.2 * sea / unit) - 1.) / .6;
-  float aaT = max(fwidth(t), 1e-4);
-  float k = floor(t + .5);
-  float waterA = line(abs(t - k), aaT, .45 * aaT) * step(.5, k) * pow(clamp(1. - k / 5.5, 0., 1.), 1.4);
-  waterA *= (1. - smoothstep(.3, .5, aaT)) * clamp((reveal - .12) * 10. - k, 0., 1.) * mix(.12, .46, day);
-
-  // Hatching along the parallels. Lines are thin at night and broad in daylight, as an engraver
-  // shades with line weight. Spacing follows the zoom in powers of two, so lines never slide.
-  float level = log2(spacing / pxPerDegree);
-  float step1 = exp2(floor(level));
-  float minor = 1. - fract(level);
-  float aaL = max(fwidth(latDeg), 1e-5);
-  float halfWidth = mix(.032, .19, day) * step1;
-  float major = line(abs(fract(latDeg / (2. * step1) + .5) - .5) * 2. * step1, aaL, halfWidth);
-  float every = line(abs(fract(latDeg / step1 + .5) - .5) * step1, aaL, halfWidth);
-  float hatch = mix(major, every, minor);
-  hatch = mix(hatch, 2. * halfWidth / step1, smoothstep(.25 * step1, .5 * step1, aaL));
-  float land = clamp(sdf / aaS + .5, 0., 1.);
-  float hatchA = hatch * land * mix(.09, .56, day) * smoothstep(.4, 1., reveal);
-
-  // A faint graticule every thirty degrees.
-  float gLat = abs(fract(latDeg / 30. + .5) - .5) * 30.;
-  float gLon = abs(fract(degrees(lon) / 30. + .5) - .5) * 30. * cos(lat);
-  float gratA = max(line(gLat, aaL, .45 * aaL), line(gLon, aaL, .45 * aaL)) * .05 * smoothstep(.5, 1., reveal);
-
-  // Sound from the playing station: rings that pass over the surface, and a warmth that
-  // gathers around the station while the music sustains.
-  float ang = acos(clamp(dot(w, beacon), -1., 1.));
-  float aaA = max(fwidth(ang), 1e-5);
-  float ringLine = 0., ringBand = 0.;
-  for (int i = 0; i < 8; i++) {
-    float s = rings[i].y;
-    if (s <= 0.) continue;
-    float dd = abs(ang - rings[i].x);
-    ringLine += s * line(dd, aaA, .55 * aaA);
-    ringBand += s * exp(-dd * dd / (ringWidth * ringWidth));
+  // Rain falls as fine slanted strokes, snow as slow points, over the whole window.
+  if (rain > 0.) {
+    vec2 q = vec2(uv.x * aspect * 90. + uv.y * 18., uv.y * 2.2 + time * 2.6);
+    float column = floor(q.x);
+    float y = fract(q.y + hash(vec2(column, 1.)) * 9.);
+    float drop = step(.9, hash(vec2(column, floor(q.y + hash(vec2(column, 1.)) * 9.)))) * smoothstep(0., .3, y) * smoothstep(1., .55, y);
+    float stroke = smoothstep(.5, .0, abs(fract(q.x) - .5) * 2.);
+    c += vec3(.7, .75, .82) * drop * stroke * rain * .09;
   }
-  ringLine = min(ringLine, 1.) * beaconOn;
-  float halo = exp(-ang * ang / (.008 + .032 * glow)) * beaconOn;
-  float warm = clamp(min(ringBand, 1.) * .75 * beaconOn + halo * (.4 + .6 * glow), 0., 1.);
+  if (snow > 0.) {
+    vec2 q = vec2(uv.x * aspect * 26. + sin(time * .3 + uv.y * 6.) * .4, uv.y * 26. + time * 1.2);
+    vec2 cell = floor(q);
+    vec2 f = fract(q) - .5 - (vec2(hash(cell), hash(cell + 2.)) - .5) * .6;
+    c += vec3(.9) * smoothstep(.09, .03, length(f)) * step(.6, hash(cell + 5.)) * snow * .35;
+  }
 
-  // Coordinates of the station: its parallel and meridian, close to it only.
-  vec3 meridian = normalize(cross(vec3(0., 1., 0.), beacon) + vec3(1e-5, 0., 0.));
-  float near = exp(-ang / .16) * beaconOn;
-  float crossA = max(line(abs(latDeg - degrees(asin(beacon.y))), aaL, .45 * aaL),
-                     line(abs(degrees(asin(clamp(dot(w, meridian), -1., 1.)))), aaL, .45 * aaL)) * near * .2;
-
-  float lineA = clamp((hatchA + coastA + waterA + gratA) * rim * (1. + .9 * warm), 0., 1.);
-  vec3 col = OCEAN * (1. + .35 * day) * mix(.7, 1., rim);
-  col = mix(col, mix(BONE, AMBER, warm), lineA);
-  col += AMBER * (ringLine * .42 + crossA + halo * .06 * glow);
-
-  float limbA = limb * .3 * smoothstep(0., .3, reveal);
-  color = vec4(col * inside + BONE * limbA * (1. - inside), inside + limbA * (1. - inside));
+  // Film grain and a soft vignette: a print, not a screen.
+  c += (hash(gl_FragCoord.xy + fract(time) * 100.) - .5) * .022;
+  vec2 v = uv - .5;
+  c *= 1. - dot(v, v) * .35;
+  color = vec4(c * reveal, 1.);
 }`;
-
-const POINT_VERTEX = `#version 300 es
-in vec3 position;
-in vec2 info;
-uniform mat3 view;
-uniform vec2 center;
-uniform float radius;
-uniform vec2 viewport;
-uniform float dpr;
-uniform float time;
-uniform float twinkle;
-uniform vec3 sun;
-uniform float reveal;
-uniform float level;
-out vec4 tint;
-out float core;
-out float edge;
-out float halo;
-const vec3 BONE = vec3(.914, .89, .839);
-const vec3 AMBER = vec3(1., .66, .3);
-void main() {
-  vec3 v = view * position;
-  float facing = smoothstep(0., .14, v.z);
-  vec2 px = center + v.xy * radius;
-  gl_Position = vec4(px / viewport * 2. - 1., 0., 1.);
-  // Stations on the night side shine brighter, like city lights.
-  float night = 1. - smoothstep(-.15, .25, dot(position, sun));
-  float shimmer = 1. + .28 * twinkle * sin(time * (.5 + info.x * 1.3) + info.x * 47.);
-  float size = 2.1;
-  vec3 c = BONE;
-  float a = mix(.3, .95, night) * shimmer;
-  halo = .32 * night;
-  if (info.y == 1.) { c = mix(BONE, AMBER, .45); a = .9; }
-  else if (info.y == 2.) { c = AMBER; size = 3.4; a = 1.; }
-  else if (info.y == 3.) { c = AMBER; size = 4.6 + 4. * level; a = 1.; halo = .55; }
-  else if (info.y == 4.) { size = 4.2; a = 1.; }
-  float shown = smoothstep(.5 + .4 * info.x, .62 + .4 * info.x, reveal);
-  tint = vec4(c, clamp(a, 0., 1.) * facing * shown);
-  float drawn = size * (.75 + .25 * facing);
-  gl_PointSize = facing > 0. ? (drawn + 2. + 12. * halo) * dpr : 0.;
-  core = drawn * dpr / max(gl_PointSize, 1.);
-  edge = 2. * dpr / max(gl_PointSize, 1.);
-}`;
-
-const POINT_FRAGMENT = `#version 300 es
-precision mediump float;
-in vec4 tint;
-in float core;
-in float edge;
-in float halo;
-out vec4 color;
-void main() {
-  float r = length(gl_PointCoord - .5) * 2.;
-  float disc = 1. - smoothstep(core - edge, core, r);
-  float glow = halo * pow(max(0., 1. - r), 2.6);
-  float a = tint.a * min(1., disc + glow);
-  color = vec4(tint.rgb * a, a);
-}`;
-
-const STATE = { plain: 0, heard: 1, kept: 2, current: 3, hovered: 4 };
 
 class Sky {
-  constructor(canvas, stations) {
+  constructor(canvas) {
     this.canvas = canvas;
-    this.stations = stations;
-    const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false });
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: false });
     this.gl = gl;
     if (!gl) return;
-    this.surface = this.program(SURFACE_VERTEX, SURFACE_FRAGMENT);
-    this.points = this.program(POINT_VERTEX, POINT_FRAGMENT);
-
-    this.quad = gl.createVertexArray();
-    gl.bindVertexArray(this.quad);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    this.attribute(this.surface, 'corner', 2);
-
-    this.cloud = gl.createVertexArray();
-    gl.bindVertexArray(this.cloud);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(stations.flatMap((s) => unitVector(s.lat, s.lon))), gl.STATIC_DRAW);
-    this.attribute(this.points, 'position', 3);
-    this.info = new Float32Array(stations.length * 2);
-    stations.forEach((s, i) => (this.info[2 * i] = fract(Math.sin(i * 12.9898) * 43758.5453)));
-    this.infoBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.infoBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, this.info, gl.DYNAMIC_DRAW);
-    this.attribute(this.points, 'info', 2);
-    gl.bindVertexArray(null);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    this.ready = this.loadCoast();
-  }
-
-  program(vertexSource, fragmentSource) {
-    const gl = this.gl;
     const program = gl.createProgram();
-    for (const [type, source] of [[gl.VERTEX_SHADER, vertexSource], [gl.FRAGMENT_SHADER, fragmentSource]]) {
+    for (const [type, source] of [[gl.VERTEX_SHADER, VERTEX], [gl.FRAGMENT_SHADER, FRAGMENT]]) {
       const shader = gl.createShader(type);
       gl.shaderSource(shader, source);
       gl.compileShader(shader);
@@ -231,125 +217,34 @@ class Sky {
       gl.attachShader(program, shader);
     }
     gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program));
-    const uniforms = {};
+    gl.useProgram(program);
+    this.uniforms = {};
     for (let i = 0; i < gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); i++) {
       const name = gl.getActiveUniform(program, i).name.replace('[0]', '');
-      uniforms[name] = gl.getUniformLocation(program, name);
+      this.uniforms[name] = gl.getUniformLocation(program, name);
     }
-    return { program, uniforms };
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const corner = gl.getAttribLocation(program, 'corner');
+    gl.enableVertexAttribArray(corner);
+    gl.vertexAttribPointer(corner, 2, gl.FLOAT, false, 0, 0);
   }
 
-  attribute({ program }, name, size) {
+  render(view) {
     const gl = this.gl;
-    const location = gl.getAttribLocation(program, name);
-    gl.enableVertexAttribArray(location);
-    gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-  }
-
-  async loadCoast() {
-    const image = new Image();
-    image.src = 'coast.png';
-    await image.decode();
-    const gl = this.gl;
-    let source = image;
-    // Some older phones cap textures at 2048 pixels.
-    if (gl.getParameter(gl.MAX_TEXTURE_SIZE) < image.width) {
-      source = document.createElement('canvas');
-      source.width = 2048;
-      source.height = 1024;
-      source.getContext('2d').drawImage(image, 0, 0, 2048, 1024);
-    }
-    gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.loaded = true;
-  }
-
-  /** Marks one station's role: heard tonight, kept, playing or under the pointer. */
-  mark(i, state) {
-    if (!this.gl || this.info[2 * i + 1] === STATE[state]) return;
-    this.info[2 * i + 1] = STATE[state];
-    this.dirtyInfo = true;
-  }
-
-  render(frame) {
-    const gl = this.gl;
-    if (!gl || !this.loaded) return;
-    const { width, height, dpr, cx, cy, radius, view } = frame;
-    gl.viewport(0, 0, width, height);
-    gl.disable(gl.SCISSOR_TEST);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    const center = [cx * dpr, height - cy * dpr];
-    const r = radius * dpr;
-    // The surface shader only runs over the globe's square.
-    gl.enable(gl.SCISSOR_TEST);
-    const pad = 60 * dpr;
-    gl.scissor(Math.floor(center[0] - r - pad), Math.floor(center[1] - r - pad), Math.ceil(2 * (r + pad)), Math.ceil(2 * (r + pad)));
-
-    const s = this.surface;
-    gl.useProgram(s.program);
-    gl.uniform2f(s.uniforms.center, center[0], center[1]);
-    gl.uniform1f(s.uniforms.radius, r);
-    gl.uniformMatrix3fv(s.uniforms.view, false, view);
-    gl.uniform3fv(s.uniforms.sun, frame.sun);
-    gl.uniform3fv(s.uniforms.beacon, frame.beacon);
-    gl.uniform1f(s.uniforms.beaconOn, frame.beaconOn);
-    gl.uniform2fv(s.uniforms.rings, frame.rings);
-    gl.uniform1f(s.uniforms.ringWidth, frame.ringWidth);
-    gl.uniform1f(s.uniforms.glow, frame.glow);
-    gl.uniform1f(s.uniforms.reveal, frame.reveal);
-    gl.uniform1f(s.uniforms.dpr, dpr);
-    gl.bindVertexArray(this.quad);
+    if (!gl) return;
+    const u = this.uniforms;
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.uniform2f(u.res, this.canvas.width, this.canvas.height);
+    gl.uniform1f(u.dpr, view.dpr);
+    gl.uniform1f(u.horizon, view.horizon);
+    gl.uniform3fv(u.zenith, view.zenith);
+    gl.uniform3fv(u.low, view.horizonColour);
+    gl.uniform3fv(u.glow, view.glow);
+    gl.uniform2f(u.sun, view.sunX, view.sunY);
+    gl.uniform2f(u.moon, view.moonX, view.moonY);
+    for (const key of ['night', 'day', 'moonLight', 'elongation', 'cloud', 'rain', 'snow', 'fog', 'time', 'level', 'seed', 'reveal', 'calm']) gl.uniform1f(u[key], view[key]);
+    gl.uniform2fv(u.swells, view.swells);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    gl.disable(gl.SCISSOR_TEST);
-    const p = this.points;
-    gl.useProgram(p.program);
-    gl.bindVertexArray(this.cloud);
-    if (this.dirtyInfo) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.infoBuffer);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.info);
-      this.dirtyInfo = false;
-    }
-    gl.uniformMatrix3fv(p.uniforms.view, false, view);
-    gl.uniform2f(p.uniforms.center, center[0], center[1]);
-    gl.uniform1f(p.uniforms.radius, r);
-    gl.uniform2f(p.uniforms.viewport, width, height);
-    gl.uniform1f(p.uniforms.dpr, dpr);
-    gl.uniform1f(p.uniforms.time, frame.time);
-    gl.uniform1f(p.uniforms.twinkle, frame.twinkle);
-    gl.uniform3fv(p.uniforms.sun, frame.sun);
-    gl.uniform1f(p.uniforms.reveal, frame.reveal);
-    gl.uniform1f(p.uniforms.level, frame.level);
-    gl.drawArrays(gl.POINTS, 0, this.stations.length);
-    gl.bindVertexArray(null);
   }
-}
-
-function unitVector(lat, lon) {
-  const a = (lat * Math.PI) / 180;
-  const b = (lon * Math.PI) / 180;
-  return [Math.cos(a) * Math.sin(b), Math.sin(a), Math.cos(a) * Math.cos(b)];
-}
-
-function fract(x) {
-  return x - Math.floor(x);
-}
-
-/** The point on Earth where the sun is overhead now, as a unit vector. */
-function sunDirection(date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
-  const day = (date - start) / 86400000;
-  const declination = -23.44 * Math.cos(((2 * Math.PI) / 365) * (day + 10));
-  const b = ((2 * Math.PI) / 364) * (day - 81);
-  const equationOfTime = 9.87 * Math.sin(2 * b) - 7.53 * Math.cos(b) - 1.5 * Math.sin(b);
-  const hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const longitude = -15 * (hours - 12 + equationOfTime / 60);
-  return unitVector(declination, longitude);
 }
