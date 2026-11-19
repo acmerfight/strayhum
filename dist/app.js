@@ -16,9 +16,30 @@ function icon(key) {
 document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
+const featuredIds = new Set(["fip", "kexp", "swissjazz", "popasia", "nts", "wqxr"]);
+const modulus = 2147483647;
+let roundSeed = history.state?.roundSeed ?? (1 + Math.floor(Math.random() * (modulus - 1)));
+let worldQueue = buildWorldQueue(roundSeed);
+
+// Only the seed needs to travel with browser history, including across reloads.
+function buildWorldQueue(seed) {
+  const featured = [], other = [];
+  STATIONS.forEach((station, i) => {
+    (featuredIds.has(station.id) ? featured : other).push(i);
+  });
+  for (const group of [featured, other]) {
+    for (let i = group.length - 1; i > 0; i--) {
+      seed = (seed * 48271) % modulus;
+      const j = Math.floor((seed / modulus) * (i + 1));
+      [group[i], group[j]] = [group[j], group[i]];
+    }
+  }
+  return featured.concat(other);
+}
 function stationFromUrl() {
   const id = new URL(location.href).searchParams.get("station");
-  return Math.max(0, STATIONS.findIndex((s) => s.id === id));
+  const requested = STATIONS.findIndex((s) => s.id === id);
+  return requested >= 0 ? requested : worldQueue[0];
 }
 let index = stationFromUrl(),
   state = "idle",
@@ -224,7 +245,6 @@ function display() {
     );
 }
 setInterval(updateClock, 15000);
-const worldQueue = STATIONS.map((_, i) => i);
 let playQueue = worldQueue;
 function setQueue(queue, scope) {
   playQueue = queue;
@@ -245,7 +265,7 @@ function showStation(i) {
 }
 function select(i, queue = playQueue, scope, filter = history.state?.stationFilter) {
   setQueue(queue, scope);
-  const entry = { ...history.state, stationFilter: filter };
+  const entry = { ...history.state, roundSeed, stationFilter: filter };
   if (i !== index) {
     const url = new URL(location.href);
     url.searchParams.set("station", STATIONS[i].id);
@@ -322,8 +342,14 @@ addOptions(
 addOptions(family, STATIONS.flatMap(stationGenres));
 $("play").onclick = toggle;
 $("next").onclick = () => {
-  if (playQueue.length > 1)
-    select(playQueue[(playQueue.indexOf(index) + 1) % playQueue.length]);
+  if (playQueue.length < 2) return;
+  if (playQueue === worldQueue && index === worldQueue.at(-1)) {
+    roundSeed = (roundSeed * 48271) % modulus;
+    worldQueue = buildWorldQueue(roundSeed);
+    select(worldQueue[0], worldQueue);
+    return;
+  }
+  select(playQueue[(playQueue.indexOf(index) + 1) % playQueue.length]);
 };
 let area = null;
 globe.onCluster = (members) => {
@@ -399,7 +425,7 @@ function appendResults() {
       const filter = pickerFilter();
       select(
         i,
-        results.map((item) => item.i),
+        queueForResults(results),
         queueLabel(filter, s),
         filter,
       );
@@ -447,10 +473,15 @@ function queueLabel(filter, station) {
   return [filter.cityKey && station.city, filter.country, filter.family, filter.query]
     .filter(Boolean).join(" · ") || "World directory";
 }
+function queueForResults(items) {
+  if (items.length === STATIONS.length) return worldQueue;
+  const matches = new Set(items.map(item => item.i));
+  return worldQueue.filter(i => matches.has(i));
+}
 function restoreQueue(i) {
   const filter = history.state?.stationFilter;
   if (filter) {
-    const queue = matchingStations(filter).map(item => item.i);
+    const queue = queueForResults(matchingStations(filter));
     if (queue.includes(i)) {
       setQueue(queue, queueLabel(filter, STATIONS[i]));
       return;
@@ -459,6 +490,11 @@ function restoreQueue(i) {
   setQueue(worldQueue, "World directory");
 }
 window.addEventListener("popstate", () => {
+  const previousSeed = history.state?.roundSeed;
+  if (previousSeed && previousSeed !== roundSeed) {
+    roundSeed = previousSeed;
+    worldQueue = buildWorldQueue(roundSeed);
+  }
   const i = stationFromUrl();
   restoreQueue(i);
   if (i === index) return;
@@ -466,10 +502,8 @@ window.addEventListener("popstate", () => {
   if (state !== "paused" && state !== "idle") tune();
 });
 const initialUrl = new URL(location.href);
-if (initialUrl.searchParams.get("station") !== STATIONS[index].id) {
-  initialUrl.searchParams.set("station", STATIONS[index].id);
-  history.replaceState(history.state, "", initialUrl);
-}
+initialUrl.searchParams.set("station", STATIONS[index].id);
+history.replaceState({ ...history.state, roundSeed }, "", initialUrl);
 restoreQueue(index);
 display();
 setState("idle");
